@@ -36,7 +36,7 @@ toml = "1.1.8"
 unicode-normalization = "0.1.26"
 walkdir = "2.5.0"
 wavicle = "0.1.0"
-zbus = "5"
+zbus = "6"
 zune-jpeg = "0.5.15"
 
 [build-dependencies]
