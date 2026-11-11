@@ -1,4 +1,10 @@
 
+## [0.1.16](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.15...v0.1.16) - 2026-11-11
+
+### Documentation
+
+- Rewrite the README around what the app does ([#56](https://github.com/pkgforge-apps/blue-dove/pull/56)) - ([4f404a0](https://github.com/pkgforge-apps/blue-dove/commit/4f404a05599c64c7d1a7334bd15c669e2f1f716f))
+
 ## [0.1.15](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.14...v0.1.15) - 2026-11-04
 
 ### Features
