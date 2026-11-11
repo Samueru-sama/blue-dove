@@ -49,6 +49,26 @@ pub const SETTLE: Duration = Duration::from_secs(5);
 /// would be a failure per frame; the fallback scan covers the gap meanwhile.
 const WATCH_RETRY: Duration = Duration::from_secs(60);
 
+/// How often the window redraws while a track plays, so its cursor moves.
+///
+/// Thirty frames a second carries the seek bar's cursor across the width of
+/// the window without drawing frames nothing changes in. A paused player asks
+/// for no frames at all and waits for a key or a client instead.
+const PLAYING_REPAINT: Duration = Duration::from_millis(33);
+
+/// The shortest wait between redraws while a track plays.
+///
+/// A short track moves the cursor quickly, but drawing faster than twenty-five
+/// frames a second spends more of the CPU than the movement is worth.
+const MIN_PLAYING_REPAINT: Duration = Duration::from_millis(40);
+
+/// The longest wait between redraws while a track plays.
+///
+/// The cursor on a long track moves less than a point a frame, so drawing
+/// faster would draw the same picture again. The clock and a client reading
+/// the position are still kept current several times a second.
+const MAX_PLAYING_REPAINT: Duration = Duration::from_millis(100);
+
 /// Height of one track row, in points.
 pub const ROW_HEIGHT: f32 = 22.0;
 
@@ -248,6 +268,12 @@ pub struct App {
     /// multiplications, which the drawing pass would otherwise do every
     /// frame; they only change with the track, the width or the layout.
     pub(crate) wave_columns: Option<(usize, u32, usize, Vec<f32>)>,
+    /// Width the waveform was last drawn at, in points.
+    ///
+    /// The cursor's repaint step is worked out from it, and only the draw
+    /// pass knows the width: [`advance`](Self::advance) runs before the
+    /// frame that would measure it.
+    pub(crate) wave_width: f32,
     /// Textures for covers, keyed by the key their picture is stored under.
     pub(crate) textures: HashMap<String, egui::TextureHandle>,
     /// The cover of the loaded track at the size the big square draws it.
@@ -486,6 +512,7 @@ impl App {
             waveform: None,
             peaks: Vec::new(),
             wave_columns: None,
+            wave_width: DEFAULT_WINDOW_SIZE[0],
             textures: HashMap::new(),
             big_art: None,
             big_asked: None,
@@ -2496,10 +2523,26 @@ impl App {
             // app only repaints on demand. The draw pass already asks for
             // this while a track plays; a quarter second is enough for a
             // client that reads the position.
-            if self.playing.is_some() {
+            if self.playing.is_some() && !self.paused() {
                 ctx.request_repaint_after(Duration::from_millis(250));
             }
         }
+    }
+
+    /// How long the seek bar's cursor takes to move one point of its width.
+    ///
+    /// The cursor is the only thing that moves while a track plays, so a
+    /// frame that would not move it a point is a frame of the same picture
+    /// drawn again. The step is clamped: a short track still animates, and a
+    /// long one still wakes often enough to keep the clock and a client
+    /// reading the position current.
+    fn cursor_step(&self) -> Duration {
+        let width = self.wave_width.max(1.0);
+        let length = self.length.as_secs_f32();
+        if length <= 0.0 {
+            return PLAYING_REPAINT;
+        }
+        Duration::from_secs_f32(length / width).clamp(MIN_PLAYING_REPAINT, MAX_PLAYING_REPAINT)
     }
 
     /// Moves the player on when a track runs out, and keeps it waking.
@@ -2514,8 +2557,10 @@ impl App {
         // to hand over from, and stepping would play something the listener
         // never chose.
         if self.abx.is_some() {
-            if !self.audio.as_ref().is_some_and(|audio| audio.is_empty()) {
-                ctx.request_repaint_after(Duration::from_millis(20));
+            // A trial's own bar moves while it plays; a paused trial has
+            // nothing to draw, so it waits for a key rather than a frame.
+            if self.audio.as_ref().is_some_and(|audio| !audio.is_empty()) && !self.paused() {
+                ctx.request_repaint_after(PLAYING_REPAINT);
             }
             return;
         }
@@ -2523,8 +2568,10 @@ impl App {
         // it is handled before the playlist walk below, which has nothing to
         // step to.
         if self.preview.is_some() {
-            if !self.audio.as_ref().is_some_and(|audio| audio.is_empty()) {
-                ctx.request_repaint_after(Duration::from_millis(20));
+            if self.audio.as_ref().is_some_and(|audio| !audio.is_empty()) {
+                if !self.paused() {
+                    ctx.request_repaint_after(self.cursor_step());
+                }
                 return;
             }
             if self.repeat
@@ -2537,13 +2584,16 @@ impl App {
         let Some(index) = self.playing else {
             return;
         };
-        if !self.audio.as_ref().is_some_and(|audio| audio.is_empty()) {
-            // The seek bar's cursor moves with the position, so the window
-            // has to draw while a track plays. A short track moves the
-            // cursor across the bar quickly, and a slow rate shows that as
-            // jumps: twenty milliseconds is fifty frames a second, which
-            // stays smooth even then.
-            ctx.request_repaint_after(Duration::from_millis(20));
+        // The seek bar's cursor moves with the position, so the window has
+        // to draw while a track plays. Paused, there is nothing to move.
+        let (empty, paused) = match &self.audio {
+            Some(audio) => (audio.is_empty(), audio.is_paused()),
+            None => return,
+        };
+        if !empty {
+            if !paused {
+                ctx.request_repaint_after(self.cursor_step());
+            }
             return;
         }
         if self.repeat {
