@@ -151,6 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Renderer::OpenGl
     });
+    let opengl_required = cli.renderer == Some(Renderer::OpenGl);
     let paths = cli.paths;
 
     // BLUE_DOVE_SOFTWARE is the switch a wrapper can use when it cannot pass
@@ -181,6 +182,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let got_a_window = ready.read(&mut signal)? == 1;
     if status.success() || got_a_window {
         std::process::exit(status.code().unwrap_or(1));
+    }
+    if opengl_required {
+        eprintln!("blue-dove: the GPU backend failed and --opengl allows no fallback");
+        std::process::exit(status.code().unwrap_or(1).max(1));
     }
     eprintln!("blue-dove: the GPU backend failed; using the software renderer");
     run_software(viewport, false, paths, show_fps, request.as_ref())
