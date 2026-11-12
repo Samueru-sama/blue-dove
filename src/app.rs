@@ -64,10 +64,10 @@ const MIN_PLAYING_REPAINT: Duration = Duration::from_millis(40);
 
 /// The longest wait between redraws while a track plays.
 ///
-/// The cursor on a long track moves less than a point a frame, so drawing
-/// faster would draw the same picture again. The clock and a client reading
-/// the position are still kept current several times a second.
-const MAX_PLAYING_REPAINT: Duration = Duration::from_millis(100);
+/// The clock is read to the second and the cursor on a long track moves
+/// slowly, so two frames a second keep both current. Drawing faster only
+/// repeats the same picture.
+const MAX_PLAYING_REPAINT: Duration = Duration::from_millis(500);
 
 /// Height of one track row, in points.
 pub const ROW_HEIGHT: f32 = 22.0;
@@ -2518,14 +2518,10 @@ impl App {
         }
 
         if connected || self.mpris.is_some() {
+            // The draw pass already keeps the published position moving
+            // while a track plays. A second timer here would only make the
+            // window draw faster than the clock changes.
             self.publish();
-            // A client asking for the position expects it to move, and the
-            // app only repaints on demand. The draw pass already asks for
-            // this while a track plays; a quarter second is enough for a
-            // client that reads the position.
-            if self.playing.is_some() && !self.paused() {
-                ctx.request_repaint_after(Duration::from_millis(250));
-            }
         }
     }
 
