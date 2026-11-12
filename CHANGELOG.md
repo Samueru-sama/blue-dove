@@ -1,4 +1,14 @@
 
+## [0.1.17](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.16...v0.1.17) - 2026-11-12
+
+### Documentation
+
+- Add performance benchmark ([#63](https://github.com/pkgforge-apps/blue-dove/pull/63)) - ([474170c](https://github.com/pkgforge-apps/blue-dove/commit/474170c12a5e5848d68ad60f3496d56854dd6a4e))
+
+### Performance
+
+- Cut playback CPU and memory ([#61](https://github.com/pkgforge-apps/blue-dove/pull/61)) - ([9fff9e5](https://github.com/pkgforge-apps/blue-dove/commit/9fff9e5b72c468ebf7f05c3b52e44290a36d14f2))
+
 ## [0.1.16](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.15...v0.1.16) - 2026-11-11
 
 ### Documentation
