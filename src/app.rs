@@ -4904,7 +4904,12 @@ pub(crate) mod tests {
         // as a scan would leave the next one an hour off, on exactly the
         // storage the fallback is there for.
         let mut app = app_with(&[("One", &["A"])]);
-        app.config.set_roots(vec![std::env::temp_dir()]);
+        // A directory of its own: another test writing to the shared one
+        // while this runs is a change that would push the due scan back.
+        let directory =
+            std::env::temp_dir().join(format!("blue-dove-failed-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("the directory is made");
+        app.config.set_roots(vec![directory.clone()]);
         app.auto_scan = true;
         app.scanned_at = None;
         app.scan = Some((failed("that directory is not there"), 0));
@@ -4926,6 +4931,7 @@ pub(crate) mod tests {
         // would fail again on every one of them.
         app.poll_workers(&egui::Context::default());
         assert!(app.scan.is_none(), "the retry waits its minute");
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
@@ -5005,7 +5011,12 @@ pub(crate) mod tests {
     #[test]
     fn the_fallback_scan_runs_once_an_hour_has_passed() {
         let mut app = app_with(&[("One", &["A"])]);
-        app.config.set_roots(vec![std::env::temp_dir()]);
+        // A directory of its own: another test writing to the shared one
+        // while this runs is a change that would push the due scan back.
+        let directory =
+            std::env::temp_dir().join(format!("blue-dove-fallback-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("the directory is made");
+        app.config.set_roots(vec![directory.clone()]);
         app.auto_scan = true;
         let ctx = egui::Context::default();
 
@@ -5022,6 +5033,7 @@ pub(crate) mod tests {
             app.scan.is_none(),
             "the fallback is an hour off, and the watch is what notices changes"
         );
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
@@ -5045,7 +5057,10 @@ pub(crate) mod tests {
         assert!(app.scan.is_none(), "the burst has not ended yet");
 
         app.scan_after = Some(Instant::now());
-        app.poll_workers(&ctx);
+        // The timer is what this half tests; a watch event arriving between
+        // the two frames would push the due scan back and is another test's
+        // subject.
+        app.scan_when_due();
         assert!(app.scan.is_some(), "the change is scanned once it has");
         assert!(
             app.scan_quiet,
