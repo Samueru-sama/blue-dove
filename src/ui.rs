@@ -1954,16 +1954,23 @@ impl App {
             // the split moves with the cursor; the bars themselves change
             // only with the width, the bar's height or the track, which are
             // what `column_heights` keys its cache on.
+            // The CPU renderer fills one rectangle per column, so two points
+            // a column halves the fills without changing the shape a listener
+            // can see at this height.
+            let step = if self.renderer == "software" { 2 } else { 1 };
             let heights = self.column_heights(rect.width(), rect.height() * 0.42);
             // One mesh for every column: a line segment per column is a
             // shape the tessellator has to feather and expand, and a window
             // wide enough to show a track is a thousand of them a frame.
             let mut mesh = egui::Mesh::default();
-            mesh.reserve_vertices(heights.len() * 4);
-            mesh.reserve_triangles(heights.len() * 2);
-            for (column, &height) in heights.iter().enumerate() {
+            mesh.reserve_vertices((heights.len() / step + 1) * 4);
+            mesh.reserve_triangles((heights.len() / step + 1) * 2);
+            let mut column = 0;
+            while column < heights.len() {
+                let end = (column + step).min(heights.len());
+                let height = heights[column..end].iter().copied().fold(0.0_f32, f32::max);
                 let left = rect.left() + column as f32;
-                let right = (left + 1.0).min(rect.right());
+                let right = (rect.left() + end as f32).min(rect.right());
                 if right <= left {
                     break;
                 }
@@ -1983,6 +1990,7 @@ impl App {
                     index + 1,
                     index + 3,
                 ]);
+                column = end;
             }
             painter.add(egui::Shape::mesh(mesh));
             painter.line_segment(

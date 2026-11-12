@@ -6,12 +6,12 @@
 //! GPU path, and it is only used when that path fails or when `--smoke` asks
 //! for it.
 //!
-//! The window keeps the app's translucency where the X server gives it an
-//! ARGB visual and a compositor blends it: softbuffer uses the window's
-//! depth, so the alpha byte the renderer writes survives. Without an ARGB
-//! visual or a compositor it draws opaque, the same as the GPU path.
-//! Everything else the app draws, including the waveform and the album
-//! grid, goes through the same egui meshes and comes out the same.
+//! The CPU path draws opaque: a translucent pixel has to be blended with the
+//! one under it, which is the expensive part of a software frame. The window
+//! is still created the same way, so switching back to OpenGL restores the
+//! translucent look the setting asks for. Everything else the app draws,
+//! including the waveform and the album grid, goes through the same egui
+//! meshes and comes out the same.
 
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -283,14 +283,11 @@ impl Runner {
         let State {
             surface, renderer, ..
         } = state;
-        let mut buffer = surface
-            .buffer_mut()
-            .map_err(|error| format!("cannot get the software buffer: {error}"))?;
-        let pixels: &mut [u32] = &mut buffer;
-        let bytes: &mut [[u8; 4]] = bytemuck::cast_slice_mut(pixels);
-        let mut buffer_ref = BufferMutRef::new(bytes, width.get() as usize, height.get() as usize);
-        renderer.render(
-            &mut buffer_ref,
+        // Rasterize before locking the surface: the buffer lock is what the
+        // compositor waits on, and the CPU work can take a while.
+        renderer.render_to_canvas(
+            width.get() as usize,
+            height.get() as usize,
             &paint_jobs,
             &textures_delta,
             pixels_per_point,
@@ -298,6 +295,13 @@ impl Runner {
         // The renderer has taken the textures; epaint panics if a delta is
         // dropped unapplied, so mark it handled before it goes out of scope.
         textures_delta.clear();
+        let mut buffer = surface
+            .buffer_mut()
+            .map_err(|error| format!("cannot get the software buffer: {error}"))?;
+        let pixels: &mut [u32] = &mut buffer;
+        let bytes: &mut [[u8; 4]] = bytemuck::cast_slice_mut(pixels);
+        let mut buffer_ref = BufferMutRef::new(bytes, width.get() as usize, height.get() as usize);
+        renderer.blit_canvas_to_buffer(&mut buffer_ref);
         buffer
             .present()
             .map_err(|error| format!("cannot present the software buffer: {error}"))?;

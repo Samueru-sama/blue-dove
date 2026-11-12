@@ -2287,8 +2287,12 @@ impl App {
     }
 
     /// How much of the desktop shows through the window, from 0 to 1.
+    ///
+    /// The software renderer draws every translucent pixel with an alpha
+    /// blend, which is the expensive part of a CPU frame; it draws opaque
+    /// instead, and the setting applies again when OpenGL is back.
     pub fn opacity(&self) -> f32 {
-        if self.transparency {
+        if self.transparency && self.renderer != "software" {
             crate::theme::TRANSLUCENT
         } else {
             1.0
