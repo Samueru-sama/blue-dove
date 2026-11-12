@@ -957,7 +957,8 @@ impl App {
         let target = directory
             .canonicalize()
             .unwrap_or_else(|_| directory.to_path_buf());
-        self.library
+        let mut found: Vec<usize> = self
+            .library
             .tracks
             .iter()
             .enumerate()
@@ -965,7 +966,20 @@ impl App {
                 track.path.starts_with(&target) || track.path.starts_with(directory)
             })
             .map(|(index, _)| index)
-            .collect()
+            .collect();
+        // A directory is queued in the order its albums are shown, not in
+        // the order the walk happened to read the files.
+        found.sort_by(|&a, &b| {
+            let a = &self.library.tracks[a];
+            let b = &self.library.tracks[b];
+            a.album_artist
+                .to_lowercase()
+                .cmp(&b.album_artist.to_lowercase())
+                .then_with(|| a.album.to_lowercase().cmp(&b.album.to_lowercase()))
+                .then_with(|| a.year.unwrap_or(u32::MAX).cmp(&b.year.unwrap_or(u32::MAX)))
+                .then_with(|| crate::library::order(a, b))
+        });
+        found
     }
 
     /// Opens the desktop's directory dialog for `pick`.
