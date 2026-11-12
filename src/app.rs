@@ -64,10 +64,11 @@ const MIN_PLAYING_REPAINT: Duration = Duration::from_millis(40);
 
 /// The longest wait between redraws while a track plays.
 ///
-/// The clock is read to the second and the cursor on a long track moves
-/// slowly, so two frames a second keep both current. Drawing faster only
-/// repeats the same picture.
-const MAX_PLAYING_REPAINT: Duration = Duration::from_millis(500);
+/// Six frames a second keeps a cursor that moves a few points a second
+/// looking smooth; drawing faster only repeats the same picture between
+/// points. A short track still moves faster, down to
+/// [`MIN_PLAYING_REPAINT`].
+const MAX_PLAYING_REPAINT: Duration = Duration::from_millis(167);
 
 /// Height of one track row, in points.
 pub const ROW_HEIGHT: f32 = 22.0;
