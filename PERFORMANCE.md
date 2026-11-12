@@ -39,7 +39,7 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 | 3 | **Blue Dove** | software | 6.97 % |
 | 4 | Strawberry | Qt6 | 7.82 % |
 | 5 | g4music | GTK4 - GL | 8.67 % |
-| 6 | g4music | GTK4 - Cairo | 72.84 % |
+| 6 | g4music | GTK4 - Cairo | **72.84 %** (lol?) |
 
 ### Winner by RSS
 
