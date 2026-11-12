@@ -319,6 +319,7 @@ Modules, in `src/`:
 | `library.rs` | scanning, tag reading, album grouping |
 | `cover.rs` | album art decoding, scaling and the PNG a media widget loads |
 | `art.rs` | the pictures a window has decoded, off the drawing thread |
+| `screen.rs` | whether the window is really on screen, on X11 |
 | `cache.rs` | the on-disk cache of the scanned library |
 | `mpris.rs` | the MPRIS service, which lets playerctl and media keys drive it |
 | `instance.rs` | the one-window lock and the socket a second launch asks through |
@@ -523,6 +524,18 @@ Platform notes:
   eframe's `logic` hook: `App::logic` polls the workers, the remote
   control and launches, and calls `advance`, which hands over to the next
   track when one ends. A track that ran out would otherwise sit there.
+- A window manager unmaps a window (a scratchpad, another workspace, a
+  minimized window) without X sending the `VisibilityNotify` event winit
+  follows, so winit still says the window is shown and eframe keeps
+  laying out and painting frames nobody sees. `screen.rs` asks the X
+  server for the map state, and while the window is off screen it adds
+  `_NET_WM_STATE_HIDDEN` to the window's EWMH state, the atom winit
+  reads as the minimized state: eframe then runs `logic` alone, and
+  `App::draw` returns before laying anything out. The pass that notices
+  the window is gone also drops the cover textures and decoded pictures,
+  which a hidden window cannot draw and would otherwise hold in memory
+  until it is shown again. The state is asked again every pass while the
+  window is hidden, so showing it again clears the atom at once.
 - Wayland has no request that hides a window: the compositor owns
   visibility, and winit's Wayland backend ignores `set_visible`, reports
   both the visibility and the minimized state as unknown, and drops an

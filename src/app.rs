@@ -302,6 +302,16 @@ pub struct App {
     /// to draw and gets them a frame or two later, so a library of thousands
     /// of tracks opens as fast as a small one.
     pub(crate) pictures: crate::art::Art,
+    /// Whether the window is off screen, so its frame is not drawn.
+    pub(crate) hidden: bool,
+    /// Watches whether the window is on screen, on hosts that report it.
+    ///
+    /// `None` when the display reports visibility itself, and on every
+    /// platform but X11.
+    screen: Option<crate::screen::Screen>,
+    /// Whether [`Self::screen`] has been asked for, so a host without one is
+    /// not asked again every frame.
+    screen_asked: bool,
     /// The audio device, opened when the first track plays.
     pub(crate) audio: Option<Audio>,
     /// Index of the playing track.
@@ -531,6 +541,9 @@ impl App {
             big_art: None,
             big_asked: None,
             pictures: crate::art::Art::default(),
+            hidden: false,
+            screen: None,
+            screen_asked: false,
             audio: None,
             playing: None,
             length: Duration::ZERO,
@@ -3160,6 +3173,28 @@ fn chord(ctx: &egui::Context, modifiers: egui::Modifiers, key: egui::Key) -> boo
     })
 }
 
+/// Returns the heap pages the pictures freed to the system.
+///
+/// glibc keeps freed arenas for reuse, which a window nobody draws has no use
+/// for; the allocator hands whole free pages back when asked.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn trim_heap() {
+    unsafe extern "C" {
+        /// Releases free heap pages; an argument of zero keeps no spare.
+        fn malloc_trim(pad: usize) -> core::ffi::c_int;
+    }
+
+    // SAFETY: the call takes a size and touches only the allocator's own
+    // bookkeeping; no pointer from this program crosses it.
+    unsafe {
+        malloc_trim(0);
+    }
+}
+
+/// Nothing to trim where the allocator does not offer it.
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn trim_heap() {}
+
 /// Whether `text` holds `needle`, which is already in lower case.
 ///
 /// Case is folded on both sides, so a search for `kero` finds `Kero Kero`.
@@ -3271,6 +3306,7 @@ impl App {
     /// a launch that asks for the window would go unheard. The software
     /// fallback calls it the same way.
     pub fn run_logic(&mut self, ctx: &egui::Context, window: Option<&Window>) {
+        self.watch_screen(ctx, window);
         self.poll_workers(ctx);
         // Requests are taken before the remote control is published, so a
         // command from the command line shows up in MPRIS in the same frame
@@ -3280,10 +3316,63 @@ impl App {
         self.take_dropped_files(ctx);
         self.handle_close(ctx, window);
         self.advance(ctx);
+        if self.hidden {
+            self.pictures.clear();
+        }
+    }
+
+    /// Keeps the frame loop in step with whether the window is on screen.
+    ///
+    /// A window manager that unmaps a window leaves winit's cached visibility
+    /// saying it is shown, so every pass lays out and paints a frame nobody
+    /// sees. Asking the display is what lets a player in the background stop
+    /// drawing without stopping playback.
+    fn watch_screen(&mut self, ctx: &egui::Context, window: Option<&Window>) {
+        if !self.screen_asked {
+            self.screen_asked = true;
+            self.screen = window.and_then(crate::screen::Screen::new);
+        }
+        let Some(screen) = &mut self.screen else {
+            return;
+        };
+        let hidden = screen.hidden();
+        if hidden == self.hidden {
+            return;
+        }
+        self.set_hidden(ctx, hidden);
+    }
+
+    /// Marks the window as off screen or back, dropping what a hidden window
+    /// would only keep in memory.
+    fn set_hidden(&mut self, ctx: &egui::Context, hidden: bool) {
+        self.hidden = hidden;
+        if hidden {
+            self.release_pictures();
+        }
+        ctx.request_repaint();
+    }
+
+    /// Drops the pictures and textures a window that is not drawn would only
+    /// keep in memory.
+    ///
+    /// The textures are freed in the pass that drops them: eframe decided
+    /// that pass was visible before the logic ran, so it still paints once and
+    /// applies the frees, and the marker the screen set makes the next pass
+    /// idle.
+    fn release_pictures(&mut self) {
+        self.textures.clear();
+        self.texture_order.clear();
+        self.big_art = None;
+        self.big_asked = None;
+        self.pictures.clear();
+        trim_heap();
     }
 
     /// Draws the window for one pass.
     pub fn draw(&mut self, ui: &mut egui::Ui) {
+        if self.hidden {
+            return;
+        }
         let ctx = ui.ctx().clone();
         self.handle_keys(&ctx);
         self.update_layout(&ctx);
@@ -3426,6 +3515,53 @@ pub(crate) mod tests {
         let mut app = app_with(&[("One", titles)]);
         app.set_random(true);
         app
+    }
+
+    /// Draws one frame for `app` and says whether it drew anything.
+    fn drew_a_frame(app: &mut App) -> bool {
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::pos2(0.0, 0.0),
+                egui::vec2(900.0, 700.0),
+            )),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| app.draw(ui));
+        output.textures_delta.clear();
+        !output.shapes.is_empty()
+    }
+
+    #[test]
+    fn a_window_that_is_not_on_screen_draws_nothing() {
+        let mut app = app_with(&[("One", &["A", "B"])]);
+        assert!(drew_a_frame(&mut app), "a shown window draws its rows");
+        app.set_hidden(&egui::Context::default(), true);
+        assert!(!drew_a_frame(&mut app), "a hidden window draws no frame");
+    }
+
+    #[test]
+    fn going_off_screen_drops_the_pictures_it_no_longer_shows() {
+        let mut app = app_with(&[("One", &["A"])]);
+        let ctx = egui::Context::default();
+        let texture = ctx.load_texture(
+            "cover",
+            egui::ColorImage::filled([2, 2], egui::Color32::WHITE),
+            egui::TextureOptions::LINEAR,
+        );
+        app.textures.insert("cover".to_string(), texture.clone());
+        app.texture_order.push_back("cover".to_string());
+        app.big_art = Some(BigArt {
+            key: "cover".to_string(),
+            side: 2,
+            texture,
+        });
+
+        app.set_hidden(&ctx, true);
+
+        assert!(app.textures.is_empty());
+        assert!(app.texture_order.is_empty());
+        assert!(app.big_art.is_none());
     }
 
     #[test]
