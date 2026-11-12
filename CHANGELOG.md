@@ -1,4 +1,10 @@
 
+## [0.1.18](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.17...v0.1.18) - 2026-11-12
+
+### Bug Fixes
+
+- Bundle the Wayland libraries ([#64](https://github.com/pkgforge-apps/blue-dove/pull/64)) - ([11ada13](https://github.com/pkgforge-apps/blue-dove/commit/11ada1379e8cb252ef0b74a4d463e1530cd4b188))
+
 ## [0.1.17](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.16...v0.1.17) - 2026-11-12
 
 ### Documentation
