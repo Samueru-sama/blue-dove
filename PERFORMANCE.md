@@ -30,17 +30,6 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 
 ## Results
 
-### Winner by RSS
-
-| # | Player | Renderer | RSS |
-|--:|---|---|---:|
-| 1 | **Blue Dove** | software | 49.3 MB |
-| 2 | DeaDBeeF | GTK3 | 103.7 MB |
-| 3 | **Blue Dove** | OpenGL | 107.3 MB |
-| 4 | g4music | Cairo | 158.7 MB |
-| 5 | Strawberry | Qt6 | 166.6 MB |
-| 6 | g4music | GL | 185.9 MB |
-
 ### Winner by CPU usage
 
 | # | Player | Renderer | CPU (one core) |
@@ -51,6 +40,17 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 | 4 | Strawberry | Qt6 | 7.82 % |
 | 5 | g4music | GL | 8.67 % |
 | 6 | g4music | Cairo | 72.84 % |
+
+### Winner by RSS
+
+| # | Player | Renderer | RSS |
+|--:|---|---|---:|
+| 1 | **Blue Dove** | software | 49.3 MB |
+| 2 | DeaDBeeF | GTK3 | 103.7 MB |
+| 3 | **Blue Dove** | OpenGL | 107.3 MB |
+| 4 | g4music | Cairo | 158.7 MB |
+| 5 | Strawberry | Qt6 | 166.6 MB |
+| 6 | g4music | GL | 185.9 MB |
 
 ### Winner by PSS
 
@@ -63,6 +63,18 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 | 5 | g4music | GL | 126.6 MB |
 | 6 | Strawberry | Qt6 | 138.1 MB |
 
+### Combined
+
+| Overall | Player | Renderer | CPU | RSS | PSS | Rank sum |
+|--:|---|---|---:|---:|---:|---:|
+| 1 | DeaDBeeF | GTK3 | 2.29 % | 103.7 MB | 57.8 MB | 5 |
+| 2 | **Blue Dove** | software | 6.97 % | 49.3 MB | 42.6 MB | 5 |
+| 3 | **Blue Dove** | OpenGL | 4.87 % | 107.3 MB | 63.3 MB | 8 |
+| 4 | g4music | Cairo | 72.84 % | 158.7 MB | 107.0 MB | 14 |
+| 5 | Strawberry | Qt6 | 7.82 % | 166.6 MB | 138.1 MB | 15 |
+| 6 | g4music | GL | 8.67 % | 185.9 MB | 126.6 MB | 16 |
+
+- The overall order sums the three rankings; lower is better. DeaDBeeF and Blue Dove (software) tie at 5, and the tie is broken by CPU usage.
 - CPU is the whole player process tree, normalized to one core: 100 % is one core, not the whole machine.
 - RSS is the sum of the process tree. PSS splits shared pages between the processes that map them.
 - The Cairo result shows that software rasterization of the full GTK scene is not viable at this window size.
