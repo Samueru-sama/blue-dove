@@ -3538,6 +3538,8 @@ pub(crate) mod tests {
         assert!(drew_a_frame(&mut app), "a shown window draws its rows");
         app.set_hidden(&egui::Context::default(), true);
         assert!(!drew_a_frame(&mut app), "a hidden window draws no frame");
+        app.set_hidden(&egui::Context::default(), false);
+        assert!(drew_a_frame(&mut app), "showing it draws again");
     }
 
     #[test]

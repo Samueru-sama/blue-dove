@@ -22,6 +22,15 @@ use std::time::Duration;
 #[cfg(target_os = "linux")]
 const POLL: Duration = Duration::from_millis(200);
 
+/// How long an unmapped window may go unseen before it counts as hidden.
+///
+/// eframe creates the window unmapped and shows it once the first frame is
+/// painted, so the passes before that see it unmapped on every host. A window
+/// that has never been seen mapped is given this long; one that has is
+/// believed at once.
+#[cfg(target_os = "linux")]
+const STARTUP: Duration = Duration::from_millis(1000);
+
 /// Watches whether the app's window is on screen.
 ///
 /// Nothing on a host that reports visibility itself, which is every platform
@@ -63,7 +72,7 @@ impl Screen {
 /// The X11 side of whether the window is on screen.
 #[cfg(target_os = "linux")]
 mod x11 {
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
     use x11rb::connection::Connection;
@@ -72,7 +81,7 @@ mod x11 {
     use x11rb::rust_connection::RustConnection;
     use x11rb::wrapper::ConnectionExt as _;
 
-    use super::POLL;
+    use super::{POLL, STARTUP};
 
     /// The X11 window whose map state and EWMH state are watched.
     pub(super) struct Server {
@@ -88,6 +97,10 @@ mod x11 {
         marked: bool,
         /// When the map state was last asked for.
         asked: Option<Instant>,
+        /// When the connection was made, for [`STARTUP`].
+        created: Instant,
+        /// Whether the window has been seen mapped at least once.
+        seen: bool,
     }
 
     impl Server {
@@ -118,6 +131,8 @@ mod x11 {
                 hidden,
                 marked: false,
                 asked: None,
+                created: Instant::now(),
+                seen: false,
             })
         }
 
@@ -133,16 +148,20 @@ mod x11 {
                 return false;
             }
             self.asked = Some(now);
-            let off_screen = self
+            let viewable = self
                 .connection
                 .get_window_attributes(self.window)
                 .ok()
                 .and_then(|cookie| cookie.reply().ok())
-                .is_some_and(|reply| reply.map_state != MapState::VIEWABLE);
-            if !off_screen {
+                .is_some_and(|reply| reply.map_state == MapState::VIEWABLE);
+            if viewable {
+                self.seen = true;
                 if self.marked {
                     self.mark(false);
                 }
+                return false;
+            }
+            if !is_hidden(viewable, self.seen, now.duration_since(self.created)) {
                 return false;
             }
             self.mark(true);
@@ -174,6 +193,15 @@ mod x11 {
         }
     }
 
+    /// Whether an unmapped window counts as hidden yet.
+    ///
+    /// Before the first frame is shown, eframe creates the window unmapped. A
+    /// window that has never been seen mapped is given [`STARTUP`] first, so
+    /// the frame that draws it is not mistaken for one nobody sees.
+    fn is_hidden(viewable: bool, seen: bool, age: Duration) -> bool {
+        !viewable && (seen || age >= STARTUP)
+    }
+
     /// The state list with `atom` added or removed, or `None` when it already
     /// says so.
     fn with_state(atoms: &[u32], atom: u32, present: bool) -> Option<Vec<u32>> {
@@ -191,7 +219,26 @@ mod x11 {
 
     #[cfg(test)]
     mod tests {
-        use super::with_state;
+        use std::time::Duration;
+
+        use super::{STARTUP, is_hidden, with_state};
+
+        #[test]
+        fn an_unmapped_window_is_hidden_once_it_has_been_seen_or_the_start_is_over() {
+            assert!(
+                !is_hidden(true, false, Duration::ZERO),
+                "a mapped window is shown"
+            );
+            assert!(
+                !is_hidden(false, false, Duration::ZERO),
+                "the first frame is still being drawn"
+            );
+            assert!(is_hidden(false, false, STARTUP));
+            assert!(
+                is_hidden(false, true, Duration::ZERO),
+                "a window that has been seen before is believed at once"
+            );
+        }
 
         #[test]
         fn the_hidden_atom_joins_the_state_list_without_replacing_it() {
