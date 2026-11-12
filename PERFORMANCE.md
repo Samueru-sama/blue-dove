@@ -12,7 +12,7 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 ## Environment
 
 - Artix Linux, kernel 7.2.14, X11 with i3.
-- Intel Xeon E5-1650 v4 (6 cores, 12 threads), 15 GiB RAM.
+- Intel Xeon E5-1650 v4 (6 cores, 12 threads), 16 GiB RAM.
 - AMD Radeon RX 580, Mesa 26.2.6.
 - PulseAudio output.
 - One 1200x800 window, one player running at a time, a fresh profile for each run.
