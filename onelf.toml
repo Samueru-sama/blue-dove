@@ -24,17 +24,21 @@ no-gtk = true
 # own CPU renderer when it does not, so the bundle carries no Mesa. The
 # exclude list keeps the scan from pulling the GL stack in by name.
 exclude = ["libdecor", "libgallium", "libGL", "libEGL", "libGLX", "libGLdispatch", "libgbm", "libdrm"]
-# winit and xkbcommon-dl load the X11 stack by name at runtime, so the
-# string scan cannot see it. libasound is what cpal links; the ALSA
-# plugins behind it load the audio servers, which are bundled here so the
-# app can play without a usable host audio stack of its own.
+# winit and xkbcommon-dl load the X11 and Wayland stacks by name at run
+# time, so the string scan cannot see them. libasound is what cpal links;
+# the ALSA plugins behind it load the audio servers, which are bundled here
+# so the app can play without a usable host audio stack of its own.
 include = [
   "libX11.so.6",
   "libX11-xcb.so.1",
   "libXcursor.so.1",
   "libXi.so.6",
   "libXrandr.so.2",
+  "libxkbcommon.so.0",
   "libxkbcommon-x11.so.0",
+  "libwayland-client.so.0",
+  "libwayland-cursor.so.0",
+  "libwayland-egl.so.1",
   "libasound.so.2",
   "libpulse.so.0",
   "libpipewire-0.3.so.0",
