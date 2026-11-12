@@ -1911,6 +1911,7 @@ impl App {
     pub(crate) fn waveform_bar(&mut self, ui: &mut egui::Ui) {
         let height = self.wave_height();
         let width = ui.available_width().max(1.0);
+        self.wave_width = width;
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 6, ui.visuals().extreme_bg_color);
@@ -1953,15 +1954,45 @@ impl App {
             // the split moves with the cursor; the bars themselves change
             // only with the width, the bar's height or the track, which are
             // what `column_heights` keys its cache on.
+            // The CPU renderer fills one rectangle per column, so two points
+            // a column halves the fills without changing the shape a listener
+            // can see at this height.
+            let step = if self.renderer == "software" { 2 } else { 1 };
             let heights = self.column_heights(rect.width(), rect.height() * 0.42);
-            for (column, &height) in heights.iter().enumerate() {
-                let x = rect.left() + column as f32;
-                let color = if x <= played_x { accent } else { idle };
-                painter.line_segment(
-                    [pos2(x, middle - height), pos2(x, middle + height)],
-                    Stroke::new(1.0, color),
-                );
+            // One mesh for every column: a line segment per column is a
+            // shape the tessellator has to feather and expand, and a window
+            // wide enough to show a track is a thousand of them a frame.
+            let mut mesh = egui::Mesh::default();
+            mesh.reserve_vertices((heights.len() / step + 1) * 4);
+            mesh.reserve_triangles((heights.len() / step + 1) * 2);
+            let mut column = 0;
+            while column < heights.len() {
+                let end = (column + step).min(heights.len());
+                let height = heights[column..end].iter().copied().fold(0.0_f32, f32::max);
+                let left = rect.left() + column as f32;
+                let right = (rect.left() + end as f32).min(rect.right());
+                if right <= left {
+                    break;
+                }
+                let color = if left <= played_x { accent } else { idle };
+                let index = mesh.vertices.len() as u32;
+                mesh.vertices.extend_from_slice(&[
+                    egui::epaint::Vertex::untextured(pos2(left, middle - height), color),
+                    egui::epaint::Vertex::untextured(pos2(right, middle - height), color),
+                    egui::epaint::Vertex::untextured(pos2(left, middle + height), color),
+                    egui::epaint::Vertex::untextured(pos2(right, middle + height), color),
+                ]);
+                mesh.indices.extend_from_slice(&[
+                    index,
+                    index + 1,
+                    index + 2,
+                    index + 2,
+                    index + 1,
+                    index + 3,
+                ]);
+                column = end;
             }
+            painter.add(egui::Shape::mesh(mesh));
             painter.line_segment(
                 [pos2(played_x, rect.top()), pos2(played_x, rect.bottom())],
                 Stroke::new(1.0, ui.visuals().text_color()),

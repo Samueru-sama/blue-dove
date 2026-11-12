@@ -487,7 +487,7 @@ fn sort_tree(directory: &mut Directory, albums: &[Album]) {
 
 /// Album and disc number order, with untagged files last and titles breaking
 /// ties so the order is stable whatever the file system returns.
-fn order(a: &Track, b: &Track) -> std::cmp::Ordering {
+pub(crate) fn order(a: &Track, b: &Track) -> std::cmp::Ordering {
     a.disc
         .unwrap_or(u32::MAX)
         .cmp(&b.disc.unwrap_or(u32::MAX))

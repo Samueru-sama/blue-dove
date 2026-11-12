@@ -4,7 +4,7 @@
 //! input into calls on it. Everything that can be tested without a window
 //! stays here.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
@@ -49,12 +49,40 @@ pub const SETTLE: Duration = Duration::from_secs(5);
 /// would be a failure per frame; the fallback scan covers the gap meanwhile.
 const WATCH_RETRY: Duration = Duration::from_secs(60);
 
+/// How often the window redraws while a track plays, so its cursor moves.
+///
+/// Thirty frames a second carries the seek bar's cursor across the width of
+/// the window without drawing frames nothing changes in. A paused player asks
+/// for no frames at all and waits for a key or a client instead.
+const PLAYING_REPAINT: Duration = Duration::from_millis(33);
+
+/// The shortest wait between redraws while a track plays.
+///
+/// A short track moves the cursor quickly, but drawing faster than twenty-five
+/// frames a second spends more of the CPU than the movement is worth.
+const MIN_PLAYING_REPAINT: Duration = Duration::from_millis(40);
+
+/// The longest wait between redraws while a track plays.
+///
+/// Six frames a second keeps a cursor that moves a few points a second
+/// looking smooth; drawing faster only repeats the same picture between
+/// points. A short track still moves faster, down to
+/// [`MIN_PLAYING_REPAINT`].
+const MAX_PLAYING_REPAINT: Duration = Duration::from_millis(167);
+
 /// Height of one track row, in points.
 pub const ROW_HEIGHT: f32 = 22.0;
 
 /// Width of the album list, in points. The now-playing art sits at its top
 /// and is as wide as the list, so the width also sets the art's size.
 pub const ALBUM_LIST_WIDTH: f32 = 300.0;
+
+/// How many cover textures are kept.
+///
+/// A thumbnail for every album ever scrolled past would grow with the library.
+/// Past this the one shown longest ago is dropped, and uploaded again from the
+/// decoded picture if it comes back.
+const KEPT_TEXTURES: usize = 64;
 
 /// Height of the bottom bar holding the waveform, in points.
 ///
@@ -231,6 +259,8 @@ pub struct App {
     pub(crate) persist: bool,
     /// Frames drawn so far, counted only during a smoke run.
     pub(crate) frames: u32,
+    /// Whether the system fallback fonts have been installed.
+    fonts_ready: bool,
     /// Settings, as last loaded or saved.
     pub(crate) config: Config,
     /// The scanned library.
@@ -248,8 +278,16 @@ pub struct App {
     /// multiplications, which the drawing pass would otherwise do every
     /// frame; they only change with the track, the width or the layout.
     pub(crate) wave_columns: Option<(usize, u32, usize, Vec<f32>)>,
+    /// Width the waveform was last drawn at, in points.
+    ///
+    /// The cursor's repaint step is worked out from it, and only the draw
+    /// pass knows the width: [`advance`](Self::advance) runs before the
+    /// frame that would measure it.
+    pub(crate) wave_width: f32,
     /// Textures for covers, keyed by the key their picture is stored under.
     pub(crate) textures: HashMap<String, egui::TextureHandle>,
+    /// Keys of those textures, oldest first, so one can make room.
+    texture_order: VecDeque<String>,
     /// The cover of the loaded track at the size the big square draws it.
     ///
     /// One at a time: the square shows one track, and a texture per track
@@ -479,6 +517,7 @@ impl App {
             smoke,
             persist: !smoke,
             frames: 0,
+            fonts_ready: false,
             config,
             library: Library::default(),
             playlists: Playlists::default(),
@@ -486,7 +525,9 @@ impl App {
             waveform: None,
             peaks: Vec::new(),
             wave_columns: None,
+            wave_width: DEFAULT_WINDOW_SIZE[0],
             textures: HashMap::new(),
+            texture_order: VecDeque::new(),
             big_art: None,
             big_asked: None,
             pictures: crate::art::Art::default(),
@@ -574,6 +615,7 @@ impl App {
             }
         }
         app.open_pending_paths(ctx);
+        app.install_fonts_if_needed(ctx);
         app
     }
 
@@ -658,6 +700,65 @@ impl App {
         self.save_playlists();
     }
 
+    /// Installs the system fallback fonts when the library needs one.
+    ///
+    /// The faces are loaded lazily: a library of Latin tags pays nothing for
+    /// the scripts it does not use, which keeps a whole font per script out
+    /// of memory. The check runs again after a scan, so a directory added
+    /// later still gets its faces.
+    fn install_fonts_if_needed(&mut self, ctx: &egui::Context) {
+        if self.fonts_ready {
+            return;
+        }
+        let tags = self
+            .library
+            .tracks
+            .iter()
+            .flat_map(|track| {
+                [
+                    track.title.as_str(),
+                    track.artist.as_str(),
+                    track.album.as_str(),
+                ]
+            })
+            .chain(
+                self.playlists
+                    .items
+                    .iter()
+                    .map(|playlist| playlist.name.as_str()),
+            );
+        let paths = self.library.tracks.iter().any(|track| {
+            crate::fonts::needed(std::iter::once(track.path.to_string_lossy().as_ref()))
+        });
+        if paths || crate::fonts::needed(tags) {
+            crate::fonts::install(ctx);
+            self.fonts_ready = true;
+        }
+    }
+
+    /// Installs the fallback fonts when one track names a script they carry.
+    ///
+    /// The preview reads a file that is not in the library, so the scan that
+    /// [`install_fonts_if_needed`](Self::install_fonts_if_needed) watches
+    /// never sees it.
+    fn install_fonts_for(&mut self, ctx: &egui::Context, track: &Track) {
+        if self.fonts_ready {
+            return;
+        }
+        let path = track.path.to_string_lossy();
+        let texts = [
+            track.title.as_str(),
+            track.artist.as_str(),
+            track.album.as_str(),
+        ]
+        .into_iter()
+        .chain(std::iter::once(path.as_ref()));
+        if crate::fonts::needed(texts) {
+            crate::fonts::install(ctx);
+            self.fonts_ready = true;
+        }
+    }
+
     /// The file a launch should preview, when it named exactly one audio file.
     ///
     /// A directory, or a second path, is a session rather than a look at one
@@ -689,6 +790,7 @@ impl App {
             self.report_missing(path);
             return;
         };
+        self.install_fonts_for(ctx, &track);
         self.queue = None;
         self.forget_shuffle();
         self.preview_art = track.cover.is_some();
@@ -855,7 +957,8 @@ impl App {
         let target = directory
             .canonicalize()
             .unwrap_or_else(|_| directory.to_path_buf());
-        self.library
+        let mut found: Vec<usize> = self
+            .library
             .tracks
             .iter()
             .enumerate()
@@ -863,7 +966,20 @@ impl App {
                 track.path.starts_with(&target) || track.path.starts_with(directory)
             })
             .map(|(index, _)| index)
-            .collect()
+            .collect();
+        // A directory is queued in the order its albums are shown, not in
+        // the order the walk happened to read the files.
+        found.sort_by(|&a, &b| {
+            let a = &self.library.tracks[a];
+            let b = &self.library.tracks[b];
+            a.album_artist
+                .to_lowercase()
+                .cmp(&b.album_artist.to_lowercase())
+                .then_with(|| a.album.to_lowercase().cmp(&b.album.to_lowercase()))
+                .then_with(|| a.year.unwrap_or(u32::MAX).cmp(&b.year.unwrap_or(u32::MAX)))
+                .then_with(|| crate::library::order(a, b))
+        });
+        found
     }
 
     /// Opens the desktop's directory dialog for `pick`.
@@ -1096,6 +1212,7 @@ impl App {
             // nothing.
             if !self.scan_quiet || !self.library.same_as(&library) {
                 self.adopt_library(*library);
+                self.install_fonts_if_needed(ctx);
             }
         }
         if finished {
@@ -1884,6 +2001,12 @@ impl App {
         };
         let cover = cover?;
         let texture = upload(ctx, key, &cover);
+        if self.textures.len() >= KEPT_TEXTURES
+            && let Some(old) = self.texture_order.pop_front()
+        {
+            self.textures.remove(&old);
+        }
+        self.texture_order.push_back(key.to_string());
         self.textures.insert(key.to_string(), texture.clone());
         Some(texture)
     }
@@ -2178,8 +2301,12 @@ impl App {
     }
 
     /// How much of the desktop shows through the window, from 0 to 1.
+    ///
+    /// The software renderer draws every translucent pixel with an alpha
+    /// blend, which is the expensive part of a CPU frame; it draws opaque
+    /// instead, and the setting applies again when OpenGL is back.
     pub fn opacity(&self) -> f32 {
-        if self.transparency {
+        if self.transparency && self.renderer != "software" {
             crate::theme::TRANSLUCENT
         } else {
             1.0
@@ -2288,6 +2415,7 @@ impl App {
         let covers = self.library.covers();
         let named: HashSet<String> = covers.iter().cloned().collect();
         self.textures.retain(|key, _| named.contains(key));
+        self.texture_order.retain(|key| named.contains(key));
         self.pictures.retain(&named);
         // A key whose bytes were gone when it was last asked for may be there
         // now, since the scan that produced this library stores what it finds.
@@ -2491,15 +2619,27 @@ impl App {
         }
 
         if connected || self.mpris.is_some() {
+            // The draw pass already keeps the published position moving
+            // while a track plays. A second timer here would only make the
+            // window draw faster than the clock changes.
             self.publish();
-            // A client asking for the position expects it to move, and the
-            // app only repaints on demand. The draw pass already asks for
-            // this while a track plays; a quarter second is enough for a
-            // client that reads the position.
-            if self.playing.is_some() {
-                ctx.request_repaint_after(Duration::from_millis(250));
-            }
         }
+    }
+
+    /// How long the seek bar's cursor takes to move one point of its width.
+    ///
+    /// The cursor is the only thing that moves while a track plays, so a
+    /// frame that would not move it a point is a frame of the same picture
+    /// drawn again. The step is clamped: a short track still animates, and a
+    /// long one still wakes often enough to keep the clock and a client
+    /// reading the position current.
+    fn cursor_step(&self) -> Duration {
+        let width = self.wave_width.max(1.0);
+        let length = self.length.as_secs_f32();
+        if length <= 0.0 {
+            return PLAYING_REPAINT;
+        }
+        Duration::from_secs_f32(length / width).clamp(MIN_PLAYING_REPAINT, MAX_PLAYING_REPAINT)
     }
 
     /// Moves the player on when a track runs out, and keeps it waking.
@@ -2514,8 +2654,10 @@ impl App {
         // to hand over from, and stepping would play something the listener
         // never chose.
         if self.abx.is_some() {
-            if !self.audio.as_ref().is_some_and(|audio| audio.is_empty()) {
-                ctx.request_repaint_after(Duration::from_millis(20));
+            // A trial's own bar moves while it plays; a paused trial has
+            // nothing to draw, so it waits for a key rather than a frame.
+            if self.audio.as_ref().is_some_and(|audio| !audio.is_empty()) && !self.paused() {
+                ctx.request_repaint_after(PLAYING_REPAINT);
             }
             return;
         }
@@ -2523,27 +2665,35 @@ impl App {
         // it is handled before the playlist walk below, which has nothing to
         // step to.
         if self.preview.is_some() {
-            if !self.audio.as_ref().is_some_and(|audio| audio.is_empty()) {
-                ctx.request_repaint_after(Duration::from_millis(20));
+            if self.audio.as_ref().is_some_and(|audio| !audio.is_empty()) {
+                if !self.paused() {
+                    ctx.request_repaint_after(self.cursor_step());
+                }
                 return;
             }
             if self.repeat
                 && let Some(track) = self.preview.take()
             {
                 self.open_preview(ctx, &track.path);
+                // The new track cleared the peaks, and the frame that reads
+                // the cached envelope back has to be asked for.
+                ctx.request_repaint();
             }
             return;
         }
         let Some(index) = self.playing else {
             return;
         };
-        if !self.audio.as_ref().is_some_and(|audio| audio.is_empty()) {
-            // The seek bar's cursor moves with the position, so the window
-            // has to draw while a track plays. A short track moves the
-            // cursor across the bar quickly, and a slow rate shows that as
-            // jumps: twenty milliseconds is fifty frames a second, which
-            // stays smooth even then.
-            ctx.request_repaint_after(Duration::from_millis(20));
+        // The seek bar's cursor moves with the position, so the window has
+        // to draw while a track plays. Paused, there is nothing to move.
+        let (empty, paused) = match &self.audio {
+            Some(audio) => (audio.is_empty(), audio.is_paused()),
+            None => return,
+        };
+        if !empty {
+            if !paused {
+                ctx.request_repaint_after(self.cursor_step());
+            }
             return;
         }
         if self.repeat {
@@ -2551,6 +2701,11 @@ impl App {
         } else {
             self.step(true);
         }
+        // Starting the track cleared the peaks and set a receiver for the
+        // cached envelope. Nothing else here wakes the window, so without
+        // this the seek bar would sit on "Reading waveform..." until the
+        // listener moved the mouse.
+        ctx.request_repaint();
     }
 
     /// Hides the window on close instead of quitting, when asked to.
@@ -4763,7 +4918,12 @@ pub(crate) mod tests {
         // as a scan would leave the next one an hour off, on exactly the
         // storage the fallback is there for.
         let mut app = app_with(&[("One", &["A"])]);
-        app.config.set_roots(vec![std::env::temp_dir()]);
+        // A directory of its own: another test writing to the shared one
+        // while this runs is a change that would push the due scan back.
+        let directory =
+            std::env::temp_dir().join(format!("blue-dove-failed-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("the directory is made");
+        app.config.set_roots(vec![directory.clone()]);
         app.auto_scan = true;
         app.scanned_at = None;
         app.scan = Some((failed("that directory is not there"), 0));
@@ -4785,6 +4945,7 @@ pub(crate) mod tests {
         // would fail again on every one of them.
         app.poll_workers(&egui::Context::default());
         assert!(app.scan.is_none(), "the retry waits its minute");
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
@@ -4864,7 +5025,12 @@ pub(crate) mod tests {
     #[test]
     fn the_fallback_scan_runs_once_an_hour_has_passed() {
         let mut app = app_with(&[("One", &["A"])]);
-        app.config.set_roots(vec![std::env::temp_dir()]);
+        // A directory of its own: another test writing to the shared one
+        // while this runs is a change that would push the due scan back.
+        let directory =
+            std::env::temp_dir().join(format!("blue-dove-fallback-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("the directory is made");
+        app.config.set_roots(vec![directory.clone()]);
         app.auto_scan = true;
         let ctx = egui::Context::default();
 
@@ -4881,6 +5047,7 @@ pub(crate) mod tests {
             app.scan.is_none(),
             "the fallback is an hour off, and the watch is what notices changes"
         );
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
@@ -4904,7 +5071,10 @@ pub(crate) mod tests {
         assert!(app.scan.is_none(), "the burst has not ended yet");
 
         app.scan_after = Some(Instant::now());
-        app.poll_workers(&ctx);
+        // The timer is what this half tests; a watch event arriving between
+        // the two frames would push the due scan back and is another test's
+        // subject.
+        app.scan_when_due();
         assert!(app.scan.is_some(), "the change is scanned once it has");
         assert!(
             app.scan_quiet,
