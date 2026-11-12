@@ -25,8 +25,8 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 | **Blue Dove** | 0.1.16 | egui | software |
 | DeaDBeeF | 1.10.3 | GTK3 | default |
 | Strawberry | 1.2.31 | Qt6 | default |
-| g4music | 4.6.2 | GTK4 | GSK, GL |
-| g4music | 4.6.2 | GTK4 | GSK, Cairo |
+| g4music | 4.6.2 | GTK4 | GTK4 - GL |
+| g4music | 4.6.2 | GTK4 | GTK4 - Cairo |
 
 ## Results
 
@@ -38,8 +38,8 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 | 2 | **Blue Dove** | OpenGL | 4.87 % |
 | 3 | **Blue Dove** | software | 6.97 % |
 | 4 | Strawberry | Qt6 | 7.82 % |
-| 5 | g4music | GL | 8.67 % |
-| 6 | g4music | Cairo | 72.84 % |
+| 5 | g4music | GTK4 - GL | 8.67 % |
+| 6 | g4music | GTK4 - Cairo | 72.84 % |
 
 ### Winner by RSS
 
@@ -48,9 +48,9 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 | 1 | **Blue Dove** | software | 49.3 MB |
 | 2 | DeaDBeeF | GTK3 | 103.7 MB |
 | 3 | **Blue Dove** | OpenGL | 107.3 MB |
-| 4 | g4music | Cairo | 158.7 MB |
+| 4 | g4music | GTK4 - Cairo | 158.7 MB |
 | 5 | Strawberry | Qt6 | 166.6 MB |
-| 6 | g4music | GL | 185.9 MB |
+| 6 | g4music | GTK4 - GL | 185.9 MB |
 
 ### Winner by PSS
 
@@ -59,8 +59,8 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 | 1 | **Blue Dove** | software | 42.6 MB |
 | 2 | DeaDBeeF | GTK3 | 57.8 MB |
 | 3 | **Blue Dove** | OpenGL | 63.3 MB |
-| 4 | g4music | Cairo | 107.0 MB |
-| 5 | g4music | GL | 126.6 MB |
+| 4 | g4music | GTK4 - Cairo | 107.0 MB |
+| 5 | g4music | GTK4 - GL | 126.6 MB |
 | 6 | Strawberry | Qt6 | 138.1 MB |
 
 ### Combined
@@ -70,9 +70,9 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 | 1 | DeaDBeeF | GTK3 | 2.29 % | 103.7 MB | 57.8 MB | 5 |
 | 2 | **Blue Dove** | software | 6.97 % | 49.3 MB | 42.6 MB | 5 |
 | 3 | **Blue Dove** | OpenGL | 4.87 % | 107.3 MB | 63.3 MB | 8 |
-| 4 | g4music | Cairo | 72.84 % | 158.7 MB | 107.0 MB | 14 |
+| 4 | g4music | GTK4 - Cairo | 72.84 % | 158.7 MB | 107.0 MB | 14 |
 | 5 | Strawberry | Qt6 | 7.82 % | 166.6 MB | 138.1 MB | 15 |
-| 6 | g4music | GL | 8.67 % | 185.9 MB | 126.6 MB | 16 |
+| 6 | g4music | GTK4 - GL | 8.67 % | 185.9 MB | 126.6 MB | 16 |
 
 - The overall order sums the three rankings; lower is better. DeaDBeeF and Blue Dove (software) tie at 5, and the tie is broken by CPU usage.
 - CPU is the whole player process tree, normalized to one core: 100 % is one core, not the whole machine.
