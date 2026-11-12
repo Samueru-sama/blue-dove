@@ -83,3 +83,11 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 
 - The album is decoded with Ogg Vorbis, and the players also hold the 76-track album and its cover, which is part of the cost above.
 - The numbers are from a single 10-second sample. Treat small differences as noise.
+
+# Improving current performance
+
+DeaDBeeF is the interesting result: it is software rendered (GTK3/Cairo) and still uses the least CPU. That is not because software rendering is cheap. It is because GTK only repaints what changed. Its seekbar timer runs at `gtkui.refresh_rate` (6 Hz here), and calls `gtk_widget_queue_draw` on the seekbar widget alone. Cairo redraws that small damaged strip; the playlist, album list, cover and menus are left as they were.
+
+Blue Dove is built on egui, which is immediate mode. A frame lays out and tessellates the whole window, and the renderer paints the whole framebuffer, whether one pixel of the seek cursor changed or not. egui and eframe do not expose a damage region, so there is no cheap "repaint the waveform strip only" path. The cursor is the only continuously moving element, so its repaint rate is derived from the track length and the bar width: about eight frames a second on this track, one point of movement per frame. Going lower makes the cursor visibly step; going higher multiplies the cost of a full-window frame. g4music with Cairo shows the other extreme: rasterizing a full GTK4 scene in software costs 72.84 %, so DeaDBeeF's number is not evidence that software rendering is cheap.
+
+That is the gap to close. Matching DeaDBeeF's CPU would need partial repaint: cache the static window as a texture and draw only the seekbar into it, move the seekbar to an overlay surface, or add dirty rectangles to the renderer. Those are architectural changes rather than tuning, and they become platform specific quickly. The current work (one waveform mesh, repaint on cursor movement, opaque software drawing and fewer waveform columns) removes the obvious waste; the remaining difference is the full-window redraw egui performs every frame.
