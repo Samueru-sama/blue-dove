@@ -30,14 +30,38 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 
 ## Results
 
-| Player | Renderer | CPU (one core) | RSS | PSS |
-|---|---|---:|---:|---:|
-| DeaDBeeF | GTK3 | 2.29 % | 103.7 MB | 57.8 MB |
-| **Blue Dove** | OpenGL | 4.87 % | 107.3 MB | 63.3 MB |
-| **Blue Dove** | software | 6.97 % | 49.3 MB | 42.6 MB |
-| Strawberry | Qt6 | 7.82 % | 166.6 MB | 138.1 MB |
-| g4music | GL | 8.67 % | 185.9 MB | 126.6 MB |
-| g4music | Cairo | 72.84 % | 158.7 MB | 107.0 MB |
+### Winner by RSS
+
+| # | Player | Renderer | RSS |
+|--:|---|---|---:|
+| 1 | **Blue Dove** | software | 49.3 MB |
+| 2 | DeaDBeeF | GTK3 | 103.7 MB |
+| 3 | **Blue Dove** | OpenGL | 107.3 MB |
+| 4 | g4music | Cairo | 158.7 MB |
+| 5 | Strawberry | Qt6 | 166.6 MB |
+| 6 | g4music | GL | 185.9 MB |
+
+### Winner by CPU usage
+
+| # | Player | Renderer | CPU (one core) |
+|--:|---|---|---:|
+| 1 | DeaDBeeF | GTK3 | 2.29 % |
+| 2 | **Blue Dove** | OpenGL | 4.87 % |
+| 3 | **Blue Dove** | software | 6.97 % |
+| 4 | Strawberry | Qt6 | 7.82 % |
+| 5 | g4music | GL | 8.67 % |
+| 6 | g4music | Cairo | 72.84 % |
+
+### Winner by PSS
+
+| # | Player | Renderer | PSS |
+|--:|---|---|---:|
+| 1 | **Blue Dove** | software | 42.6 MB |
+| 2 | DeaDBeeF | GTK3 | 57.8 MB |
+| 3 | **Blue Dove** | OpenGL | 63.3 MB |
+| 4 | g4music | Cairo | 107.0 MB |
+| 5 | g4music | GL | 126.6 MB |
+| 6 | Strawberry | Qt6 | 138.1 MB |
 
 - CPU is the whole player process tree, normalized to one core: 100 % is one core, not the whole machine.
 - RSS is the sum of the process tree. PSS splits shared pages between the processes that map them.
