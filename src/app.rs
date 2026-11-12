@@ -4,7 +4,7 @@
 //! input into calls on it. Everything that can be tested without a window
 //! stays here.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
@@ -76,6 +76,13 @@ pub const ROW_HEIGHT: f32 = 22.0;
 /// Width of the album list, in points. The now-playing art sits at its top
 /// and is as wide as the list, so the width also sets the art's size.
 pub const ALBUM_LIST_WIDTH: f32 = 300.0;
+
+/// How many cover textures are kept.
+///
+/// A thumbnail for every album ever scrolled past would grow with the library.
+/// Past this the one shown longest ago is dropped, and uploaded again from the
+/// decoded picture if it comes back.
+const KEPT_TEXTURES: usize = 64;
 
 /// Height of the bottom bar holding the waveform, in points.
 ///
@@ -279,6 +286,8 @@ pub struct App {
     pub(crate) wave_width: f32,
     /// Textures for covers, keyed by the key their picture is stored under.
     pub(crate) textures: HashMap<String, egui::TextureHandle>,
+    /// Keys of those textures, oldest first, so one can make room.
+    texture_order: VecDeque<String>,
     /// The cover of the loaded track at the size the big square draws it.
     ///
     /// One at a time: the square shows one track, and a texture per track
@@ -518,6 +527,7 @@ impl App {
             wave_columns: None,
             wave_width: DEFAULT_WINDOW_SIZE[0],
             textures: HashMap::new(),
+            texture_order: VecDeque::new(),
             big_art: None,
             big_asked: None,
             pictures: crate::art::Art::default(),
@@ -1977,6 +1987,12 @@ impl App {
         };
         let cover = cover?;
         let texture = upload(ctx, key, &cover);
+        if self.textures.len() >= KEPT_TEXTURES
+            && let Some(old) = self.texture_order.pop_front()
+        {
+            self.textures.remove(&old);
+        }
+        self.texture_order.push_back(key.to_string());
         self.textures.insert(key.to_string(), texture.clone());
         Some(texture)
     }
@@ -2381,6 +2397,7 @@ impl App {
         let covers = self.library.covers();
         let named: HashSet<String> = covers.iter().cloned().collect();
         self.textures.retain(|key, _| named.contains(key));
+        self.texture_order.retain(|key| named.contains(key));
         self.pictures.retain(&named);
         // A key whose bytes were gone when it was last asked for may be there
         // now, since the scan that produced this library stores what it finds.

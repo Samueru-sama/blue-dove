@@ -27,7 +27,9 @@ use crate::cover::Cover;
 /// A cover is a quarter of a megabyte decoded, so a library of thousands of
 /// albums would hold hundreds of megabytes if every one stayed. Past this the
 /// picture decoded longest ago goes, and a key drawn again is decoded again.
-const KEPT: usize = 512;
+/// Sixty-four covers are several screens of album rows, and the big square
+/// has a texture of its own.
+const KEPT: usize = 64;
 
 /// The decoded pictures, and the thread that decodes the rest.
 #[derive(Default)]
