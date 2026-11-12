@@ -2578,6 +2578,9 @@ impl App {
                 && let Some(track) = self.preview.take()
             {
                 self.open_preview(ctx, &track.path);
+                // The new track cleared the peaks, and the frame that reads
+                // the cached envelope back has to be asked for.
+                ctx.request_repaint();
             }
             return;
         }
@@ -2601,6 +2604,11 @@ impl App {
         } else {
             self.step(true);
         }
+        // Starting the track cleared the peaks and set a receiver for the
+        // cached envelope. Nothing else here wakes the window, so without
+        // this the seek bar would sit on "Reading waveform..." until the
+        // listener moved the mouse.
+        ctx.request_repaint();
     }
 
     /// Hides the window on close instead of quitting, when asked to.
