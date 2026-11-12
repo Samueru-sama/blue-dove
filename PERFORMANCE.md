@@ -21,8 +21,8 @@ This is a benchmark of blue-dove against other common music players built on GTK
 
 | Player | Version | Toolkit | Renderer |
 |---|---|---|---|
-| blue-dove | 0.1.16 | egui | OpenGL |
-| blue-dove | 0.1.16 | egui | software |
+| **blue-dove** | 0.1.16 | egui | OpenGL |
+| **blue-dove** | 0.1.16 | egui | software |
 | DeaDBeeF | 1.10.3 | GTK3 | default |
 | Strawberry | 1.2.31 | Qt6 | default |
 | g4music | 4.6.2 | GTK4 | GSK, GL |
@@ -33,8 +33,8 @@ This is a benchmark of blue-dove against other common music players built on GTK
 | Player | Renderer | CPU (one core) | RSS | PSS |
 |---|---|---:|---:|---:|
 | DeaDBeeF | GTK3 | 2.29 % | 103.7 MB | 57.8 MB |
-| blue-dove | OpenGL | 4.87 % | 107.3 MB | 63.3 MB |
-| blue-dove | software | 6.97 % | 49.3 MB | 42.6 MB |
+| **blue-dove** | OpenGL | 4.87 % | 107.3 MB | 63.3 MB |
+| **blue-dove** | software | 6.97 % | 49.3 MB | 42.6 MB |
 | Strawberry | Qt6 | 7.82 % | 166.6 MB | 138.1 MB |
 | g4music | GL | 8.67 % | 185.9 MB | 126.6 MB |
 | g4music | Cairo | 72.84 % | 158.7 MB | 107.0 MB |
