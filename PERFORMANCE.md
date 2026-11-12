@@ -86,8 +86,18 @@ This is a benchmark of Blue Dove against other common music players built on GTK
 
 # Improving current performance
 
+## CPU
+
 DeaDBeeF is the interesting result: it is software rendered (GTK3/Cairo) and still uses the least CPU. That is not because software rendering is cheap. It is because GTK only repaints what changed. Its seekbar timer runs at `gtkui.refresh_rate` (6 Hz here), and calls `gtk_widget_queue_draw` on the seekbar widget alone. Cairo redraws that small damaged strip; the playlist, album list, cover and menus are left as they were.
 
 Blue Dove is built on egui, which is immediate mode. A frame lays out and tessellates the whole window, and the renderer paints the whole framebuffer, whether one pixel of the seek cursor changed or not. egui and eframe do not expose a damage region, so there is no cheap "repaint the waveform strip only" path. The cursor is the only continuously moving element, so its repaint rate is derived from the track length and the bar width: about eight frames a second on this track, one point of movement per frame. Going lower makes the cursor visibly step; going higher multiplies the cost of a full-window frame. g4music with Cairo shows the other extreme: rasterizing a full GTK4 scene in software costs 72.84 %, so DeaDBeeF's number is not evidence that software rendering is cheap.
 
-That is the gap to close. Matching DeaDBeeF's CPU would need partial repaint: cache the static window as a texture and draw only the seekbar into it, move the seekbar to an overlay surface, or add dirty rectangles to the renderer. Those are architectural changes rather than tuning, and they become platform specific quickly. The current work (one waveform mesh, repaint on cursor movement, opaque software drawing and fewer waveform columns) removes the obvious waste; the remaining difference is the full-window redraw egui performs every frame.
+That is the CPU gap to close. Matching DeaDBeeF would need partial repaint: cache the static window as a texture and draw only the seekbar into it, move the seekbar to an overlay surface, or add dirty rectangles to the renderer. Those are architectural changes rather than tuning, and they become platform specific quickly. The current work (one waveform mesh, repaint on cursor movement, fewer waveform columns and an opaque software path) removes the obvious waste; the remaining difference is the full-window redraw egui performs every frame.
+
+## RAM
+
+RAM is a much smaller gap than CPU. DeaDBeeF reports 103.7 MB RSS and 57.8 MB PSS, while Blue Dove's OpenGL path is 107.3 MB and 63.3 MB: about 4 MB of RSS and 5.5 MB of PSS more. Blue Dove's software path is lower than both at 49.3 MB and 42.6 MB, because it does not map the GL stack at all. The other players sit in a different range: Strawberry is 166.6 MB / 138.1 MB, and g4music is 185.9 MB / 126.6 MB with GL and 158.7 MB / 107.0 MB with Cairo.
+
+Most of the difference between Blue Dove's two paths is Mesa: the GL context, the shader compiler and the window framebuffers. That is also why the software path, despite its CPU cost, is the memory winner. GTK3 has its own cost inside DeaDBeeF, but no GPU driver is mapped into the process.
+
+The app-side work already went after the easy memory. Fallback fonts are loaded only for the scripts the library uses, the decoded and uploaded cover caches are bounded, and the software path draws opaque to avoid an extra blend. For a 76-track album, the library, tags and waveform are small next to the GL stack. Lowering it much further means not using OpenGL or making the driver's own heaps smaller; there is no simple app-level knob for that.
