@@ -291,7 +291,6 @@ fn build_app(
     show_fps: bool,
 ) -> App {
     eprintln!("blue-dove: using the {renderer} renderer");
-    fonts::install(ctx);
     let mut app = App::new(ctx, smoke, paths);
     app.renderer = renderer;
     app.show_fps = show_fps;

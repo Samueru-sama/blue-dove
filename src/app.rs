@@ -252,6 +252,8 @@ pub struct App {
     pub(crate) persist: bool,
     /// Frames drawn so far, counted only during a smoke run.
     pub(crate) frames: u32,
+    /// Whether the system fallback fonts have been installed.
+    fonts_ready: bool,
     /// Settings, as last loaded or saved.
     pub(crate) config: Config,
     /// The scanned library.
@@ -506,6 +508,7 @@ impl App {
             smoke,
             persist: !smoke,
             frames: 0,
+            fonts_ready: false,
             config,
             library: Library::default(),
             playlists: Playlists::default(),
@@ -602,6 +605,7 @@ impl App {
             }
         }
         app.open_pending_paths(ctx);
+        app.install_fonts_if_needed(ctx);
         app
     }
 
@@ -686,6 +690,65 @@ impl App {
         self.save_playlists();
     }
 
+    /// Installs the system fallback fonts when the library needs one.
+    ///
+    /// The faces are loaded lazily: a library of Latin tags pays nothing for
+    /// the scripts it does not use, which keeps a whole font per script out
+    /// of memory. The check runs again after a scan, so a directory added
+    /// later still gets its faces.
+    fn install_fonts_if_needed(&mut self, ctx: &egui::Context) {
+        if self.fonts_ready {
+            return;
+        }
+        let tags = self
+            .library
+            .tracks
+            .iter()
+            .flat_map(|track| {
+                [
+                    track.title.as_str(),
+                    track.artist.as_str(),
+                    track.album.as_str(),
+                ]
+            })
+            .chain(
+                self.playlists
+                    .items
+                    .iter()
+                    .map(|playlist| playlist.name.as_str()),
+            );
+        let paths = self.library.tracks.iter().any(|track| {
+            crate::fonts::needed(std::iter::once(track.path.to_string_lossy().as_ref()))
+        });
+        if paths || crate::fonts::needed(tags) {
+            crate::fonts::install(ctx);
+            self.fonts_ready = true;
+        }
+    }
+
+    /// Installs the fallback fonts when one track names a script they carry.
+    ///
+    /// The preview reads a file that is not in the library, so the scan that
+    /// [`install_fonts_if_needed`](Self::install_fonts_if_needed) watches
+    /// never sees it.
+    fn install_fonts_for(&mut self, ctx: &egui::Context, track: &Track) {
+        if self.fonts_ready {
+            return;
+        }
+        let path = track.path.to_string_lossy();
+        let texts = [
+            track.title.as_str(),
+            track.artist.as_str(),
+            track.album.as_str(),
+        ]
+        .into_iter()
+        .chain(std::iter::once(path.as_ref()));
+        if crate::fonts::needed(texts) {
+            crate::fonts::install(ctx);
+            self.fonts_ready = true;
+        }
+    }
+
     /// The file a launch should preview, when it named exactly one audio file.
     ///
     /// A directory, or a second path, is a session rather than a look at one
@@ -717,6 +780,7 @@ impl App {
             self.report_missing(path);
             return;
         };
+        self.install_fonts_for(ctx, &track);
         self.queue = None;
         self.forget_shuffle();
         self.preview_art = track.cover.is_some();
@@ -1124,6 +1188,7 @@ impl App {
             // nothing.
             if !self.scan_quiet || !self.library.same_as(&library) {
                 self.adopt_library(*library);
+                self.install_fonts_if_needed(ctx);
             }
         }
         if finished {

@@ -243,6 +243,21 @@ const DATA_DIRS: &[&str] = &["/usr/local/share", "/usr/share"];
 /// Extensions a font file can carry.
 const EXTENSIONS: &[&str] = &["ttf", "otf", "ttc", "otc"];
 
+/// Whether `texts` hold a character the bundled faces may not draw.
+///
+/// The bundled Latin face covers Latin Extended-A, but no combining mark, no
+/// Vietnamese letter and nothing of the scripts the fallback list carries. A
+/// character past that range is therefore taken as needing a fallback face;
+/// the few scripts the bundled faces do cover, such as Greek, pay for a font
+/// they do not use rather than risk a box.
+pub fn needed<'a>(texts: impl Iterator<Item = &'a str>) -> bool {
+    /// The first code point past Latin Extended-A.
+    const FIRST_UNCOVERED: u32 = 0x0250;
+    texts
+        .into_iter()
+        .any(|text| text.chars().any(|letter| letter as u32 >= FIRST_UNCOVERED))
+}
+
 /// Adds the best font found for each script as a fallback in both families.
 pub fn install(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
