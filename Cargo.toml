@@ -58,3 +58,6 @@ codegen-units = 1
 lto = true
 panic = "abort"
 strip = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13.2", default-features = false }

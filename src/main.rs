@@ -23,6 +23,7 @@ mod mpris;
 mod opus;
 mod player;
 mod playlist;
+mod screen;
 mod software;
 mod theme;
 mod ui;

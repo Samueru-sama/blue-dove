@@ -366,6 +366,7 @@ dependencies = [
  "wavicle",
  "winit",
  "winresource",
+ "x11rb",
  "zbus",
  "zune-jpeg",
 ]

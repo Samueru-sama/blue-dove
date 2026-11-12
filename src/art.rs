@@ -203,6 +203,21 @@ impl Art {
         }
     }
 
+    /// Drops every picture, decoded or still queued, and stops the thread
+    /// working through the rest of the library.
+    ///
+    /// A window that is not drawn keeps no pixels: the pictures a hidden
+    /// player holds are megabytes nothing shows, and the thread walking the
+    /// whole library would keep replacing them.
+    pub fn clear(&mut self) {
+        let mut keys: Vec<String> = self.decoded.keys().cloned().collect();
+        keys.extend(self.asked.iter().cloned());
+        keys.extend(self.drawn.iter().cloned());
+        keys.sort_unstable();
+        keys.dedup();
+        self.forget(&keys);
+    }
+
     /// Drops the pictures decoded longest ago once too many are kept.
     fn make_room(&mut self) {
         let excess = self.decoded.len().saturating_sub(KEPT);
