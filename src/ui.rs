@@ -3,6 +3,7 @@
 //! Every function here reads [`App`] state and turns input into calls on it.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use eframe::egui::{self, Align2, Color32, FontId, Rect, Sense, Stroke, pos2, vec2};
@@ -22,6 +23,26 @@ const DIRECTORY_ROW_HEIGHT: f32 = 24.0;
 /// Height of a loose track row, smaller than an album row so a directory's
 /// stray files read as secondary.
 const LOOSE_ROW_HEIGHT: f32 = 18.0;
+
+/// The waveform bars mesh, kept from one frame to the next.
+pub(crate) struct WaveMesh {
+    /// The rect and the number of peaks it was built for.
+    key: (u32, u32, u32, u32, usize),
+    /// The accent and idle colours its vertices were last painted with.
+    colors: (Color32, Color32),
+    /// How many groups at the left are in the accent colour.
+    marked: usize,
+    /// The bars.
+    mesh: Arc<egui::Mesh>,
+}
+
+/// Paints the four vertices of one bar group.
+fn paint_group(mesh: &mut egui::Mesh, group: usize, color: Color32) {
+    let start = group * 4;
+    for vertex in &mut mesh.vertices[start..start + 4] {
+        vertex.color = color;
+    }
+}
 
 /// What a click on the album list asked for.
 ///
@@ -1947,51 +1968,12 @@ impl App {
         } else {
             let accent = self.accent();
             let idle = ui.visuals().widgets.inactive.bg_fill;
-            let middle = rect.center().y;
             let played_x = rect.left() + rect.width() * played;
-            // One column per point of width, each as tall as the loudest peak
-            // it covers. Only the part already played is in the accent, so
-            // the split moves with the cursor; the bars themselves change
-            // only with the width, the bar's height or the track, which are
-            // what `column_heights` keys its cache on.
-            // The CPU renderer fills one rectangle per column, so two points
-            // a column halves the fills without changing the shape a listener
-            // can see at this height.
-            let step = if self.renderer == "software" { 2 } else { 1 };
-            let heights = self.column_heights(rect.width(), rect.height() * 0.42);
-            // One mesh for every column: a line segment per column is a
-            // shape the tessellator has to feather and expand, and a window
-            // wide enough to show a track is a thousand of them a frame.
-            let mut mesh = egui::Mesh::default();
-            mesh.reserve_vertices((heights.len() / step + 1) * 4);
-            mesh.reserve_triangles((heights.len() / step + 1) * 2);
-            let mut column = 0;
-            while column < heights.len() {
-                let end = (column + step).min(heights.len());
-                let height = heights[column..end].iter().copied().fold(0.0_f32, f32::max);
-                let left = rect.left() + column as f32;
-                let right = (rect.left() + end as f32).min(rect.right());
-                if right <= left {
-                    break;
-                }
-                let color = if left <= played_x { accent } else { idle };
-                let index = mesh.vertices.len() as u32;
-                mesh.vertices.extend_from_slice(&[
-                    egui::epaint::Vertex::untextured(pos2(left, middle - height), color),
-                    egui::epaint::Vertex::untextured(pos2(right, middle - height), color),
-                    egui::epaint::Vertex::untextured(pos2(left, middle + height), color),
-                    egui::epaint::Vertex::untextured(pos2(right, middle + height), color),
-                ]);
-                mesh.indices.extend_from_slice(&[
-                    index,
-                    index + 1,
-                    index + 2,
-                    index + 2,
-                    index + 1,
-                    index + 3,
-                ]);
-                column = end;
-            }
+            // Two points a column halves the mesh without changing the shape
+            // a listener can see at this height, and the mesh is kept from
+            // frame to frame: a cursor that moves only recolours the columns
+            // it crossed.
+            let mesh = self.bar_mesh(rect, played_x, accent, idle);
             painter.add(egui::Shape::mesh(mesh));
             painter.line_segment(
                 [pos2(played_x, rect.top()), pos2(played_x, rect.bottom())],
@@ -2014,6 +1996,98 @@ impl App {
             let fraction = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
             self.seek_to(fraction);
         }
+    }
+
+    /// The bars mesh for the waveform, reusing the last one.
+    ///
+    /// The geometry only changes with the rect and the peaks; the accent
+    /// split moves with the cursor. Keeping the mesh and recolouring the
+    /// groups the split crossed is what keeps a frame from rebuilding a
+    /// thousand vertices to move a line.
+    fn bar_mesh(
+        &mut self,
+        rect: Rect,
+        played_x: f32,
+        accent: Color32,
+        idle: Color32,
+    ) -> Arc<egui::Mesh> {
+        const STEP: usize = 2;
+        let half = rect.height() * 0.42;
+        let _ = self.column_heights(rect.width(), half);
+        let heights = &self.wave_columns.as_ref().expect("just filled").3;
+        let groups = heights.len().div_ceil(STEP);
+        let key = (
+            rect.left().to_bits(),
+            rect.top().to_bits(),
+            rect.width().to_bits(),
+            rect.height().to_bits(),
+            self.peaks.len(),
+        );
+        let offset = (played_x - rect.left()).max(0.0);
+        let played_group = ((offset / STEP as f32).floor() as usize + 1).min(groups);
+
+        if self.wave_mesh.as_ref().is_none_or(|cached| cached.key != key) {
+            let middle = rect.center().y;
+            let mut mesh = egui::Mesh::default();
+            mesh.reserve_vertices(groups * 4);
+            mesh.reserve_triangles(groups * 2);
+            for group in 0..groups {
+                let first = group * STEP;
+                let end = (first + STEP).min(heights.len());
+                let height = heights[first..end].iter().copied().fold(0.0_f32, f32::max);
+                let left = rect.left() + first as f32;
+                let right = (rect.left() + end as f32).min(rect.right());
+                if right <= left {
+                    break;
+                }
+                let index = mesh.vertices.len() as u32;
+                mesh.vertices.extend_from_slice(&[
+                    egui::epaint::Vertex::untextured(pos2(left, middle - height), idle),
+                    egui::epaint::Vertex::untextured(pos2(right, middle - height), idle),
+                    egui::epaint::Vertex::untextured(pos2(left, middle + height), idle),
+                    egui::epaint::Vertex::untextured(pos2(right, middle + height), idle),
+                ]);
+                mesh.indices.extend_from_slice(&[
+                    index,
+                    index + 1,
+                    index + 2,
+                    index + 2,
+                    index + 1,
+                    index + 3,
+                ]);
+            }
+            self.wave_mesh = Some(WaveMesh {
+                key,
+                colors: (accent, idle),
+                marked: 0,
+                mesh: Arc::new(mesh),
+            });
+        }
+
+        let cached = self.wave_mesh.as_mut().expect("just filled");
+        let groups = cached.mesh.vertices.len() / 4;
+        let played_group = played_group.min(groups);
+        if cached.colors != (accent, idle) {
+            let marked = cached.marked;
+            let mesh = Arc::make_mut(&mut cached.mesh);
+            for group in 0..groups {
+                paint_group(mesh, group, if group < marked { accent } else { idle });
+            }
+            cached.colors = (accent, idle);
+        }
+        if cached.marked != played_group {
+            let (from, to, color) = if cached.marked < played_group {
+                (cached.marked, played_group, accent)
+            } else {
+                (played_group, cached.marked, idle)
+            };
+            let mesh = Arc::make_mut(&mut cached.mesh);
+            for group in from..to {
+                paint_group(mesh, group, color);
+            }
+            cached.marked = played_group;
+        }
+        Arc::clone(&cached.mesh)
     }
 }
 

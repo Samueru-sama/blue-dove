@@ -285,6 +285,9 @@ pub struct App {
     /// multiplications, which the drawing pass would otherwise do every
     /// frame; they only change with the track, the width or the layout.
     pub(crate) wave_columns: Option<(usize, u32, usize, Vec<f32>)>,
+    /// The bars mesh, kept from one frame to the next so a cursor that moves
+    /// only recolours the columns it crossed.
+    pub(crate) wave_mesh: Option<crate::ui::WaveMesh>,
     /// Width the waveform was last drawn at, in points.
     ///
     /// The cursor's repaint step is worked out from it, and only the draw
@@ -538,6 +541,7 @@ impl App {
             waveform: None,
             peaks: Vec::new(),
             wave_columns: None,
+            wave_mesh: None,
             wave_width: DEFAULT_WINDOW_SIZE[0],
             textures: HashMap::new(),
             texture_order: VecDeque::new(),
@@ -1254,6 +1258,7 @@ impl App {
         {
             self.peaks = peaks.unwrap_or_default();
             self.wave_columns = None;
+            self.wave_mesh = None;
             self.waveform = None;
         }
 
@@ -1712,6 +1717,7 @@ impl App {
         self.seek = None;
         self.peaks.clear();
         self.wave_columns = None;
+        self.wave_mesh = None;
         self.waveform = None;
     }
 
