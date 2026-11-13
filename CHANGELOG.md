@@ -1,4 +1,20 @@
 
+## [0.1.19](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.18...v0.1.19) - 2026-11-13
+
+### Refactor
+
+- Choose the renderer with BD_RENDERER ([#71](https://github.com/pkgforge-apps/blue-dove/pull/71)) - ([57c7f7f](https://github.com/pkgforge-apps/blue-dove/commit/57c7f7f6886ace4b4670e689395e52623e3260b3))
+
+### Performance
+
+- Keep the waveform mesh between frames ([#72](https://github.com/pkgforge-apps/blue-dove/pull/72)) - ([cdf6b2e](https://github.com/pkgforge-apps/blue-dove/commit/cdf6b2ea25ed1a7e330c7ea6519017debc894b20))
+- Wake a hidden player at the end of its track ([#69](https://github.com/pkgforge-apps/blue-dove/pull/69)) - ([3cddb31](https://github.com/pkgforge-apps/blue-dove/commit/3cddb314bb12a3cb21db20026f691b583bec7a10))
+- Stop drawing a window the WM unmapped ([#66](https://github.com/pkgforge-apps/blue-dove/pull/66)) - ([171f309](https://github.com/pkgforge-apps/blue-dove/commit/171f3097c46eeedcc4fcfe4c689f3416e84a3f31))
+
+### Styling
+
+- Tighten the waveform and the album column ([#73](https://github.com/pkgforge-apps/blue-dove/pull/73)) - ([0973efc](https://github.com/pkgforge-apps/blue-dove/commit/0973efc0eb79b7e12c4bd45eb4c431be059d6583))
+
 ## [0.1.18](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.17...v0.1.18) - 2026-11-12
 
 ### Bug Fixes
