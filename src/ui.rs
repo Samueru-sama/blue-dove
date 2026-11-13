@@ -28,9 +28,9 @@ const LOOSE_ROW_HEIGHT: f32 = 18.0;
 pub(crate) struct WaveMesh {
     /// The rect and the number of peaks it was built for.
     key: (u32, u32, u32, u32, usize),
-    /// The accent and idle colours its vertices were last painted with.
+    /// The played and remaining colours its vertices were last painted with.
     colors: (Color32, Color32),
-    /// How many groups at the left are in the accent colour.
+    /// How many groups at the left are in the played colour.
     marked: usize,
     /// The bars.
     mesh: Arc<egui::Mesh>,
@@ -1973,7 +1973,7 @@ impl App {
             // a listener can see at this height, and the mesh is kept from
             // frame to frame: a cursor that moves only recolours the columns
             // it crossed.
-            let mesh = self.bar_mesh(rect, played_x, accent, idle);
+            let mesh = self.bar_mesh(rect, played_x, idle, accent);
             painter.add(egui::Shape::mesh(mesh));
             painter.line_segment(
                 [pos2(played_x, rect.top()), pos2(played_x, rect.bottom())],
@@ -2000,16 +2000,17 @@ impl App {
 
     /// The bars mesh for the waveform, reusing the last one.
     ///
-    /// The geometry only changes with the rect and the peaks; the accent
-    /// split moves with the cursor. Keeping the mesh and recolouring the
-    /// groups the split crossed is what keeps a frame from rebuilding a
-    /// thousand vertices to move a line.
+    /// The geometry only changes with the rect and the peaks; the split
+    /// between the part already played and the part still to play moves with
+    /// the cursor. Keeping the mesh and recolouring the groups the split
+    /// crossed is what keeps a frame from rebuilding a thousand vertices to
+    /// move a line.
     fn bar_mesh(
         &mut self,
         rect: Rect,
         played_x: f32,
-        accent: Color32,
-        idle: Color32,
+        played: Color32,
+        remaining: Color32,
     ) -> Arc<egui::Mesh> {
         const STEP: usize = 2;
         let half = rect.height() * 0.42;
@@ -2026,7 +2027,11 @@ impl App {
         let offset = (played_x - rect.left()).max(0.0);
         let played_group = ((offset / STEP as f32).floor() as usize + 1).min(groups);
 
-        if self.wave_mesh.as_ref().is_none_or(|cached| cached.key != key) {
+        if self
+            .wave_mesh
+            .as_ref()
+            .is_none_or(|cached| cached.key != key)
+        {
             let middle = rect.center().y;
             let mut mesh = egui::Mesh::default();
             mesh.reserve_vertices(groups * 4);
@@ -2042,10 +2047,10 @@ impl App {
                 }
                 let index = mesh.vertices.len() as u32;
                 mesh.vertices.extend_from_slice(&[
-                    egui::epaint::Vertex::untextured(pos2(left, middle - height), idle),
-                    egui::epaint::Vertex::untextured(pos2(right, middle - height), idle),
-                    egui::epaint::Vertex::untextured(pos2(left, middle + height), idle),
-                    egui::epaint::Vertex::untextured(pos2(right, middle + height), idle),
+                    egui::epaint::Vertex::untextured(pos2(left, middle - height), remaining),
+                    egui::epaint::Vertex::untextured(pos2(right, middle - height), remaining),
+                    egui::epaint::Vertex::untextured(pos2(left, middle + height), remaining),
+                    egui::epaint::Vertex::untextured(pos2(right, middle + height), remaining),
                 ]);
                 mesh.indices.extend_from_slice(&[
                     index,
@@ -2058,7 +2063,7 @@ impl App {
             }
             self.wave_mesh = Some(WaveMesh {
                 key,
-                colors: (accent, idle),
+                colors: (played, remaining),
                 marked: 0,
                 mesh: Arc::new(mesh),
             });
@@ -2067,19 +2072,19 @@ impl App {
         let cached = self.wave_mesh.as_mut().expect("just filled");
         let groups = cached.mesh.vertices.len() / 4;
         let played_group = played_group.min(groups);
-        if cached.colors != (accent, idle) {
+        if cached.colors != (played, remaining) {
             let marked = cached.marked;
             let mesh = Arc::make_mut(&mut cached.mesh);
             for group in 0..groups {
-                paint_group(mesh, group, if group < marked { accent } else { idle });
+                paint_group(mesh, group, if group < marked { played } else { remaining });
             }
-            cached.colors = (accent, idle);
+            cached.colors = (played, remaining);
         }
         if cached.marked != played_group {
             let (from, to, color) = if cached.marked < played_group {
-                (cached.marked, played_group, accent)
+                (cached.marked, played_group, played)
             } else {
-                (played_group, cached.marked, idle)
+                (played_group, cached.marked, remaining)
             };
             let mesh = Arc::make_mut(&mut cached.mesh);
             for group in from..to {
