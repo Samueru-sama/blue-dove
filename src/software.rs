@@ -241,7 +241,7 @@ impl Runner {
         let ctx = &self.ctx;
         let full_output = ctx.run_ui(raw_input, |ui| {
             app.run_logic(ui.ctx(), Some(&state.window));
-            app.draw(ui);
+            app.draw(ui, None);
         });
         let egui::FullOutput {
             platform_output,

@@ -7,10 +7,12 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+use eframe::glow::HasContext as _;
 use winit::window::Window;
 
 use crate::abx::{Abx, Choice, Side};
@@ -79,11 +81,10 @@ const MIN_PLAYING_REPAINT: Duration = Duration::from_millis(40);
 
 /// The longest wait between redraws while a track plays.
 ///
-/// Six frames a second keeps a cursor that moves a few points a second
-/// looking smooth; drawing faster only repeats the same picture between
-/// points. A short track still moves faster, down to
+/// Ten frames a second is the seekbar's rate: a longer wait is a cursor that
+/// moves in visible steps, which is what DeaDBeeF's own bar does not do. A short track still moves faster, down to
 /// [`MIN_PLAYING_REPAINT`].
-const MAX_PLAYING_REPAINT: Duration = Duration::from_millis(167);
+const MAX_PLAYING_REPAINT: Duration = Duration::from_millis(100);
 
 /// Height of one track row, in points.
 pub const ROW_HEIGHT: f32 = 22.0;
@@ -253,6 +254,17 @@ pub(crate) struct BigArt {
     texture: egui::TextureHandle,
 }
 
+/// A GL texture holding the last full frame, so a later pass can show it
+/// without laying the window out again.
+pub(crate) struct FrameCache {
+    /// The texture, registered with the painter under [`Self::id`].
+    texture: eframe::glow::Texture,
+    /// The id the painter knows the texture by.
+    pub(crate) id: egui::TextureId,
+    /// The pixel size it was allocated for.
+    size: [u32; 2],
+}
+
 /// Everything the window draws, and the state behind it.
 pub struct App {
     /// The renderer the window is drawing through.
@@ -288,6 +300,17 @@ pub struct App {
     /// The bars mesh, kept from one frame to the next so a cursor that moves
     /// only recolours the columns it crossed.
     pub(crate) wave_mesh: Option<crate::ui::WaveMesh>,
+    /// The waveform's rectangle in the last full frame.
+    pub(crate) wave_rect: Option<egui::Rect>,
+    /// The last full frame, kept for the passes that only move the cursor.
+    pub(crate) frame_cache: Option<FrameCache>,
+    /// When the last full frame was copied into the cache.
+    captured_at: Instant,
+    /// When input last arrived that the frame had to answer.
+    last_input: Instant,
+    /// Whether something the full frame shows has changed since it was
+    /// copied.
+    pub(crate) ui_dirty: bool,
     /// Width the waveform was last drawn at, in points.
     ///
     /// The cursor's repaint step is worked out from it, and only the draw
@@ -542,6 +565,11 @@ impl App {
             peaks: Vec::new(),
             wave_columns: None,
             wave_mesh: None,
+            wave_rect: None,
+            frame_cache: None,
+            captured_at: Instant::now(),
+            last_input: Instant::now(),
+            ui_dirty: true,
             wave_width: DEFAULT_WINDOW_SIZE[0],
             textures: HashMap::new(),
             texture_order: VecDeque::new(),
@@ -1260,6 +1288,7 @@ impl App {
             self.wave_columns = None;
             self.wave_mesh = None;
             self.waveform = None;
+            self.ui_dirty = true;
         }
 
         if let Some(receiver) = &self.abx_reading
@@ -1291,6 +1320,7 @@ impl App {
         }
 
         if self.pictures.poll() {
+            self.ui_dirty = true;
             ctx.request_repaint();
         }
 
@@ -1316,6 +1346,7 @@ impl App {
     /// A track that cannot be opened, or an index the library does not hold,
     /// leaves the error in the status line and nothing playing.
     pub fn play(&mut self, index: usize) {
+        self.ui_dirty = true;
         // Playing a row by hand ends a blind test: the two would fight over
         // the device, and the row would say which track X is.
         self.abx = None;
@@ -1458,6 +1489,7 @@ impl App {
 
     /// Starts or pauses playback.
     pub fn toggle(&mut self) {
+        self.ui_dirty = true;
         let loaded = self.playing.is_some() || self.preview.is_some() || self.abx.is_some();
         match &self.audio {
             Some(audio) if loaded => audio.toggle(),
@@ -1709,6 +1741,7 @@ impl App {
     /// The track stays selected in the table, so play starts it again from
     /// the beginning.
     pub fn stop(&mut self) {
+        self.ui_dirty = true;
         if let Some(audio) = &self.audio {
             audio.stop();
         }
@@ -2177,6 +2210,7 @@ impl App {
 
     /// Seeks to `position`, reporting a decoder that cannot seek.
     pub fn seek_to_position(&mut self, position: Duration) {
+        self.ui_dirty = true;
         let Some(audio) = &self.audio else {
             return;
         };
@@ -2189,6 +2223,7 @@ impl App {
     /// Sets the volume and applies it. The settings file is written when
     /// the slider is let go, not on every frame of a drag.
     pub fn set_volume(&mut self, volume: f32) {
+        self.ui_dirty = true;
         self.volume = volume.clamp(0.0, 1.0);
         if let Some(audio) = &self.audio {
             audio.set_volume(self.volume);
@@ -2221,6 +2256,7 @@ impl App {
 
     /// Picks a theme, applies it, and remembers it.
     pub fn set_theme(&mut self, theme: crate::theme::Theme) {
+        self.ui_dirty = true;
         self.theme = theme;
         self.config.theme = Some(theme.key().to_string());
         self.save_settings();
@@ -2228,6 +2264,7 @@ impl App {
 
     /// Turns repeat on or off, and remembers it.
     pub fn set_repeat(&mut self, repeat: bool) {
+        self.ui_dirty = true;
         self.repeat = repeat;
         self.config.repeat = Some(repeat);
         self.save_settings();
@@ -2238,6 +2275,7 @@ impl App {
     /// Switching it on starts a new shuffle, so the order follows the
     /// playlist as it stands now rather than as it stood when it was last on.
     pub fn set_random(&mut self, random: bool) {
+        self.ui_dirty = true;
         self.random = random;
         self.forget_shuffle();
         self.config.random = Some(random);
@@ -2246,6 +2284,7 @@ impl App {
 
     /// Turns the translucent background on or off, and remembers it.
     pub fn set_transparency(&mut self, transparency: bool) {
+        self.ui_dirty = true;
         self.transparency = transparency;
         self.config.transparency = Some(transparency);
         self.save_settings();
@@ -2389,6 +2428,7 @@ impl App {
     /// gone drops out of its playlist; the playing track is found the same
     /// way, so a rescan while something plays does not stop it.
     pub fn adopt_library(&mut self, library: Library) {
+        self.ui_dirty = true;
         let paths: Vec<Vec<PathBuf>> = self
             .playlists
             .items
@@ -3337,6 +3377,7 @@ impl App {
     /// Marks the window as off screen or back, dropping what a hidden window
     /// would only keep in memory.
     fn set_hidden(&mut self, ctx: &egui::Context, hidden: bool) {
+        self.ui_dirty = true;
         self.hidden = hidden;
         if hidden {
             self.release_pictures();
@@ -3361,11 +3402,18 @@ impl App {
     }
 
     /// Draws the window for one pass.
-    pub fn draw(&mut self, ui: &mut egui::Ui) {
+    ///
+    /// `frame` is the eframe frame on the GPU path and `None` in the software
+    /// fallback, which has no GL context to keep a frame in.
+    pub fn draw(&mut self, ui: &mut egui::Ui, frame: Option<&mut eframe::Frame>) {
         if self.hidden {
             return;
         }
         let ctx = ui.ctx().clone();
+        if self.reuse_frame(&ctx, frame.as_deref()) {
+            self.paint_cached(ui);
+            return;
+        }
         self.handle_keys(&ctx);
         self.update_layout(&ctx);
 
@@ -3431,6 +3479,168 @@ impl App {
         self.directories_window(&ctx);
 
         self.tick_smoke(&ctx);
+        self.cache_frame(ui, frame);
+    }
+
+    /// Whether this pass can show the last full frame instead of drawing the
+    /// window again.
+    ///
+    /// Only a pass that moves the seek cursor qualifies: the window is
+    /// playing, the user is not doing anything, and the last full frame is
+    /// less than a second old. Input, a dialog, a status line and every
+    /// visible state change get a full pass.
+    fn reuse_frame(&mut self, ctx: &egui::Context, frame: Option<&eframe::Frame>) -> bool {
+        let Some(frame) = frame else {
+            return false;
+        };
+        if frame.gl().is_none() || self.frame_cache.is_none() {
+            return false;
+        }
+        if self.preview.is_some()
+            || self.abx.is_some()
+            || self.directories_open
+            || self.picker.is_some()
+            || self.status.is_some()
+            || self.peaks.is_empty()
+        {
+            return false;
+        }
+        if self.playing.is_none() || self.audio.is_none() || self.paused() || self.ui_dirty {
+            return false;
+        }
+        let cache = self.frame_cache.as_ref().expect("just checked");
+        let pixels_per_point = ctx.pixels_per_point();
+        let screen = ctx.viewport_rect();
+        let size = [
+            (screen.width() * pixels_per_point).round() as u32,
+            (screen.height() * pixels_per_point).round() as u32,
+        ];
+        if cache.size != size {
+            return false;
+        }
+        if ctx.input(|input| !input.events.is_empty() || input.pointer.any_down()) {
+            self.last_input = Instant::now();
+            return false;
+        }
+        if self.last_input.elapsed() < Duration::from_millis(250) {
+            return false;
+        }
+        if self.captured_at.elapsed() >= Duration::from_secs(1) {
+            return false;
+        }
+        true
+    }
+
+    /// Copies the frame just drawn into the cache, allocating it on the first
+    /// full pass and on a resize.
+    fn cache_frame(&mut self, ui: &mut egui::Ui, frame: Option<&mut eframe::Frame>) {
+        let Some(frame) = frame else {
+            return;
+        };
+        let Some(gl) = frame.gl().cloned() else {
+            return;
+        };
+        if self.preview.is_some()
+            || self.abx.is_some()
+            || self.directories_open
+            || self.picker.is_some()
+            || self.status.is_some()
+            || self.peaks.is_empty()
+            || self.playing.is_none()
+            || self.audio.is_none()
+            || self.paused()
+        {
+            return;
+        }
+        let pixels_per_point = ui.ctx().pixels_per_point();
+        let screen = ui.ctx().viewport_rect();
+        let size = [
+            (screen.width() * pixels_per_point).round().max(1.0) as u32,
+            (screen.height() * pixels_per_point).round().max(1.0) as u32,
+        ];
+        let recreate = self
+            .frame_cache
+            .as_ref()
+            .is_none_or(|cache| cache.size != size);
+        if recreate {
+            let (texture, id) = match self.frame_cache.as_ref() {
+                Some(cache) => (cache.texture, cache.id),
+                None => {
+                    let texture = unsafe { gl.create_texture() };
+                    let Ok(texture) = texture else {
+                        return;
+                    };
+                    let id = frame.register_native_glow_texture(texture);
+                    (texture, id)
+                }
+            };
+            unsafe {
+                gl.bind_texture(eframe::glow::TEXTURE_2D, Some(texture));
+                gl.tex_parameter_i32(
+                    eframe::glow::TEXTURE_2D,
+                    eframe::glow::TEXTURE_MIN_FILTER,
+                    eframe::glow::LINEAR as i32,
+                );
+                gl.tex_parameter_i32(
+                    eframe::glow::TEXTURE_2D,
+                    eframe::glow::TEXTURE_MAG_FILTER,
+                    eframe::glow::LINEAR as i32,
+                );
+                gl.tex_parameter_i32(
+                    eframe::glow::TEXTURE_2D,
+                    eframe::glow::TEXTURE_WRAP_S,
+                    eframe::glow::CLAMP_TO_EDGE as i32,
+                );
+                gl.tex_parameter_i32(
+                    eframe::glow::TEXTURE_2D,
+                    eframe::glow::TEXTURE_WRAP_T,
+                    eframe::glow::CLAMP_TO_EDGE as i32,
+                );
+                gl.tex_image_2d(
+                    eframe::glow::TEXTURE_2D,
+                    0,
+                    eframe::glow::RGBA8 as i32,
+                    size[0] as i32,
+                    size[1] as i32,
+                    0,
+                    eframe::glow::RGBA,
+                    eframe::glow::UNSIGNED_BYTE,
+                    eframe::glow::PixelUnpackData::Slice(None),
+                );
+                gl.bind_texture(eframe::glow::TEXTURE_2D, None);
+            }
+            self.frame_cache = Some(FrameCache { texture, id, size });
+        }
+        let Some(cache) = &self.frame_cache else {
+            return;
+        };
+        let texture = cache.texture;
+        let layer = egui::LayerId::new(egui::Order::Debug, egui::Id::unique("frame-cache"));
+        ui.ctx()
+            .layer_painter(layer)
+            .add(egui::Shape::Callback(egui::PaintCallback {
+                rect: screen,
+                callback: Arc::new(eframe::egui_glow::CallbackFn::new(move |info, painter| {
+                    let gl = painter.gl();
+                    let [width, height] = info.screen_size_px;
+                    unsafe {
+                        gl.bind_texture(eframe::glow::TEXTURE_2D, Some(texture));
+                        gl.copy_tex_sub_image_2d(
+                            eframe::glow::TEXTURE_2D,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            width as i32,
+                            height as i32,
+                        );
+                        gl.bind_texture(eframe::glow::TEXTURE_2D, None);
+                    }
+                })),
+            }));
+        self.captured_at = Instant::now();
+        self.ui_dirty = false;
     }
 }
 
@@ -3460,8 +3670,8 @@ impl eframe::App for App {
         self.run_logic(ctx, frame.winit_window().map(|window| &**window));
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.draw(ui);
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        self.draw(ui, Some(frame));
     }
 }
 
@@ -3518,7 +3728,7 @@ pub(crate) mod tests {
             )),
             ..Default::default()
         };
-        let mut output = ctx.run_ui(input, |ui| app.draw(ui));
+        let mut output = ctx.run_ui(input, |ui| app.draw(ui, None));
         output.textures_delta.clear();
         !output.shapes.is_empty()
     }

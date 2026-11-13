@@ -1934,16 +1934,9 @@ impl App {
         let width = ui.available_width().max(1.0);
         self.wave_width = width;
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
+        self.wave_rect = Some(rect);
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 6, ui.visuals().extreme_bg_color);
-
-        let length = self.length.as_secs_f32();
-        let position = self.position().as_secs_f32();
-        let played = if length > 0.0 {
-            (position / length).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
 
         if self.peaks.is_empty() {
             // A thin bar has no room for a sentence, and the popup is small
@@ -1966,19 +1959,7 @@ impl App {
                 ui.visuals().weak_text_color(),
             );
         } else {
-            let accent = self.accent();
-            let idle = ui.visuals().widgets.inactive.bg_fill;
-            let played_x = rect.left() + rect.width() * played;
-            // Two points a column halves the mesh without changing the shape
-            // a listener can see at this height, and the mesh is kept from
-            // frame to frame: a cursor that moves only recolours the columns
-            // it crossed.
-            let mesh = self.bar_mesh(rect, played_x, idle, accent);
-            painter.add(egui::Shape::mesh(mesh));
-            painter.line_segment(
-                [pos2(played_x, rect.top()), pos2(played_x, rect.bottom())],
-                Stroke::new(1.0, ui.visuals().text_color()),
-            );
+            self.paint_waveform(ui, rect);
         }
 
         if response.dragged() {
@@ -1996,6 +1977,58 @@ impl App {
             let fraction = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
             self.seek_to(fraction);
         }
+    }
+
+    /// Shows the last full frame, with the waveform and its cursor painted
+    /// over it.
+    ///
+    /// This is the pass the player takes when nothing has happened but the
+    /// clock: no layout, no menu, no table, just the cached frame and the
+    /// strip that moves.
+    pub(crate) fn paint_cached(&mut self, ui: &mut egui::Ui) {
+        let Some(cache) = &self.frame_cache else {
+            return;
+        };
+        let screen = ui.ctx().viewport_rect();
+        ui.painter().image(
+            cache.id,
+            screen,
+            Rect::from_min_max(pos2(0.0, 1.0), pos2(1.0, 0.0)),
+            Color32::WHITE,
+        );
+        if let Some(rect) = self.wave_rect {
+            self.paint_waveform(ui, rect);
+        }
+    }
+
+    /// Draws the waveform background, its bars and the cursor.
+    ///
+    /// Both the full pass and the cached one come through here, so the cursor
+    /// looks the same whether the window was just laid out or is running on
+    /// the cached frame.
+    fn paint_waveform(&mut self, ui: &egui::Ui, rect: Rect) {
+        let accent = self.accent();
+        let idle = ui.visuals().widgets.inactive.bg_fill;
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 6, ui.visuals().extreme_bg_color);
+
+        let length = self.length.as_secs_f32();
+        let position = self.position().as_secs_f32();
+        let played = if length > 0.0 {
+            (position / length).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let played_x = rect.left() + rect.width() * played;
+        // Two points a column halves the mesh without changing the shape a
+        // listener can see at this height, and the mesh is kept from frame to
+        // frame: a cursor that moves only recolours the columns it crossed.
+        let mesh = self.bar_mesh(rect, played_x, idle, accent);
+        painter.add(egui::Shape::mesh(mesh));
+        painter.line_segment(
+            [pos2(played_x, rect.top()), pos2(played_x, rect.bottom())],
+            Stroke::new(1.0, ui.visuals().text_color()),
+        );
     }
 
     /// The bars mesh for the waveform, reusing the last one.
