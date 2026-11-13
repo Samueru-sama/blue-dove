@@ -28,6 +28,26 @@ impl Renderer {
     }
 }
 
+/// The audio output a launch asked for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Output {
+    /// ALSA through cpal, which is what every platform opens by default.
+    #[default]
+    Alsa,
+    /// PulseAudio's own client, which skips libasound's plugin.
+    Pulse,
+}
+
+impl Output {
+    /// The command line flag that names this output.
+    pub fn flag(self) -> &'static str {
+        match self {
+            Self::Alsa => "--alsa",
+            Self::Pulse => "--pulse",
+        }
+    }
+}
+
 /// What a launch was asked to do.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Cli {
@@ -41,6 +61,8 @@ pub struct Cli {
     pub no_vsync: bool,
     /// The renderer the launch asked for, when it named one.
     pub renderer: Option<Renderer>,
+    /// The audio output the launch asked for, when it named one.
+    pub output: Option<Output>,
 }
 
 /// A transport command given on the command line.
@@ -160,6 +182,8 @@ Options:
       --no-vsync   Disable vsync on the GPU renderer
       --opengl     Draw through OpenGL (the default)
       --software   Draw with the CPU renderer
+      --alsa       Play through ALSA (the default)
+      --pulse      Play through PulseAudio directly (Linux)
 
 A command goes to the player that is already running, and starts nothing.
 With no player running, a PATH opens the window and a bare command says
@@ -200,6 +224,24 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Parsed {
                         ));
                     }
                     cli.renderer = Some(renderer);
+                    continue;
+                }
+                "--alsa" | "--pulse" => {
+                    let output = if arg == "--alsa" {
+                        Output::Alsa
+                    } else {
+                        Output::Pulse
+                    };
+                    if let Some(previous) = cli.output
+                        && previous != output
+                    {
+                        return Parsed::Error(format!(
+                            "{} and {} cannot both be given",
+                            previous.flag(),
+                            output.flag()
+                        ));
+                    }
+                    cli.output = Some(output);
                     continue;
                 }
                 "-h" | "--help" => return Parsed::Help,
@@ -292,6 +334,17 @@ mod tests {
         assert_eq!(
             parse_args(&["--opengl", "--software"]),
             Parsed::Error("--opengl and --software cannot both be given".to_string())
+        );
+    }
+
+    #[test]
+    fn each_output_flag_names_its_output() {
+        assert_eq!(run(&["--alsa"]).output, Some(Output::Alsa));
+        assert_eq!(run(&["--pulse"]).output, Some(Output::Pulse));
+        assert_eq!(run(&[]).output, None);
+        assert_eq!(
+            parse_args(&["--alsa", "--pulse"]),
+            Parsed::Error("--alsa and --pulse cannot both be given".to_string())
         );
     }
 

@@ -327,6 +327,8 @@ pub struct App {
     /// Whether [`Self::screen`] has been asked for, so a host without one is
     /// not asked again every frame.
     screen_asked: bool,
+    /// The output the audio device is opened through.
+    pub(crate) output: crate::cli::Output,
     /// The audio device, opened when the first track plays.
     pub(crate) audio: Option<Audio>,
     /// Index of the playing track.
@@ -559,6 +561,7 @@ impl App {
             hidden: false,
             screen: None,
             screen_asked: false,
+            output: crate::cli::Output::default(),
             audio: None,
             playing: None,
             length: Duration::ZERO,
@@ -867,7 +870,7 @@ impl App {
         self.art = None;
 
         if self.audio.is_none() {
-            match Audio::open(self.volume) {
+            match Audio::open(self.volume, self.output) {
                 Ok(audio) => self.audio = Some(audio),
                 Err(error) => {
                     self.status = Some(error);
@@ -1333,7 +1336,7 @@ impl App {
         let tagged = track.duration;
 
         if self.audio.is_none() {
-            match Audio::open(self.volume) {
+            match Audio::open(self.volume, self.output) {
                 Ok(audio) => self.audio = Some(audio),
                 Err(error) => {
                     self.status = Some(error);
@@ -1777,7 +1780,7 @@ impl App {
         let path = test.path(choice);
         let tagged = test.choice(choice).duration;
         if self.audio.is_none() {
-            match Audio::open(self.volume) {
+            match Audio::open(self.volume, self.output) {
                 Ok(audio) => self.audio = Some(audio),
                 Err(error) => {
                     self.status = Some(error);

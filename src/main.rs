@@ -23,6 +23,8 @@ mod mpris;
 mod opus;
 mod player;
 mod playlist;
+#[cfg(target_os = "linux")]
+mod pulse;
 mod screen;
 mod software;
 mod theme;
@@ -36,7 +38,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 
 use app::App;
-use cli::Renderer;
+use cli::{Output, Renderer};
 use eframe::egui;
 
 /// Window and taskbar icon, generated from `assets/icon.svg`.
@@ -153,6 +155,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Renderer::OpenGl
     });
     let opengl_required = cli.renderer == Some(Renderer::OpenGl);
+    // BLUE_DOVE_PULSE is the switch a wrapper can use when it cannot pass
+    // --pulse. An explicit flag, either one, wins over it.
+    let output = cli.output.unwrap_or_else(|| {
+        if std::env::var_os("BLUE_DOVE_PULSE").is_some() {
+            Output::Pulse
+        } else {
+            Output::Alsa
+        }
+    });
     let paths = cli.paths;
 
     // BLUE_DOVE_SOFTWARE is the switch a wrapper can use when it cannot pass
@@ -160,13 +171,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let software_only =
         renderer == Renderer::Software || std::env::var_os("BLUE_DOVE_SOFTWARE").is_some();
     if software_only {
-        return run_software(viewport, smoke, paths, show_fps, request.as_ref());
+        return run_software(viewport, smoke, paths, show_fps, output, request.as_ref());
     }
 
     // The child runs the GPU path; the parent waits and falls back if it
     // dies, which catches a segfault or an abort that unwinding cannot.
     if std::env::var_os("BLUE_DOVE_GPU").is_some() {
-        return run_gpu(viewport, smoke, paths, show_fps, no_vsync, request.as_ref());
+        return run_gpu(
+            viewport,
+            smoke,
+            paths,
+            show_fps,
+            no_vsync,
+            output,
+            request.as_ref(),
+        );
     }
 
     // The child reports on its stdout once it has a window, so a death
@@ -189,7 +208,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(status.code().unwrap_or(1).max(1));
     }
     eprintln!("blue-dove: the GPU backend failed; using the software renderer");
-    run_software(viewport, false, paths, show_fps, request.as_ref())
+    run_software(viewport, false, paths, show_fps, output, request.as_ref())
 }
 
 /// Claims the app, or asks the window that already owns it to show itself.
@@ -222,6 +241,7 @@ fn run_gpu(
     paths: Vec<PathBuf>,
     show_fps: bool,
     no_vsync: bool,
+    output: Output,
     request: Option<&instance::Request>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some((lock, listener)) = claim(smoke, request) else {
@@ -250,6 +270,7 @@ fn run_gpu(
                 listener,
                 "OpenGL",
                 show_fps,
+                output,
             )))
         }),
     );
@@ -264,13 +285,14 @@ fn run_software(
     smoke: bool,
     paths: Vec<PathBuf>,
     show_fps: bool,
+    output: Output,
     request: Option<&instance::Request>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some((lock, listener)) = claim(smoke, request) else {
         return Ok(());
     };
     let result = software::run(viewport, move |ctx| {
-        build_app(ctx, smoke, paths, listener, "software", show_fps)
+        build_app(ctx, smoke, paths, listener, "software", show_fps, output)
     });
     drop(lock);
     match result {
@@ -290,11 +312,13 @@ fn build_app(
     listener: Option<TcpListener>,
     renderer: &'static str,
     show_fps: bool,
+    output: Output,
 ) -> App {
     eprintln!("blue-dove: using the {renderer} renderer");
     let mut app = App::new(ctx, smoke, paths);
     app.renderer = renderer;
     app.show_fps = show_fps;
+    app.output = output;
     if let Some(listener) = listener {
         app.watch_requests(listener, ctx);
     }

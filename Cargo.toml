@@ -60,4 +60,5 @@ panic = "abort"
 strip = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+libloading = "0.8"
 x11rb = { version = "0.13.2", default-features = false }

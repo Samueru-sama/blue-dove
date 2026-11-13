@@ -346,6 +346,7 @@ dependencies = [
  "eframe",
  "egui-winit",
  "hdrshot-egui-backend",
+ "libloading",
  "lofty",
  "notify",
  "ogg",

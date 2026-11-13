@@ -41,6 +41,7 @@ include = [
   "libwayland-egl.so.1",
   "libasound.so.2",
   "libpulse.so.0",
+  "libpulse-simple.so.0",
   "libpipewire-0.3.so.0",
   "libasound_module_pcm_pulse.so",
   "libasound_module_pcm_pipewire.so",

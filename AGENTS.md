@@ -327,6 +327,7 @@ Modules, in `src/`:
 | `game/` | the decoders for video game rip formats |
 | `opus.rs` | the Ogg Opus reader, which symphonia lacks |
 | `player.rs` | the rodio device, player and seek calls |
+| `pulse.rs` | native PulseAudio output, loaded when asked for |
 | `downmix.rs` | the fold from a surround track to stereo |
 | `waveform.rs` | the peak envelope of a track, computed off the UI thread |
 | `dialog.rs` | the directory chooser, through rfd with zenity as the fallback |
@@ -341,9 +342,17 @@ Modules, in `src/`:
 
 Platform notes:
 
-- Audio goes through cpal's ALSA backend, so the build links
+- Audio goes through cpal's ALSA backend by default, so the build links
   `libasound`: `alsa-lib` on Arch, `libasound2-dev` on Debian and
-  Ubuntu. This is the only system dependency.
+  Ubuntu. This is the only system dependency. `--pulse` (or
+  `BLUE_DOVE_PULSE=1` for a wrapper) opens the stream in PulseAudio
+  itself instead, through `libpulse-simple`, which skips the ALSA plugin
+  and its conversion. That library is loaded by name at run time and
+  never linked, so a host without it still starts and still plays through
+  ALSA; on macOS and Windows the flag reports that the output is only
+  available on Linux. The app's own mixer still feeds it: a thread pulls
+  rodio's `MixerSource` into `pa_simple_write`, which keeps the position,
+  seek, pause and volume calls working as they do on the ALSA path.
 - The ALSA plugins that reach PulseAudio and PipeWire are loaded by
   name from a directory compiled into libasound. The AppImage gets them
   from quick-sharun's audio deployment; `onelf.toml` lists them in
