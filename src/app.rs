@@ -56,6 +56,21 @@ const WATCH_RETRY: Duration = Duration::from_secs(60);
 /// for no frames at all and waits for a key or a client instead.
 const PLAYING_REPAINT: Duration = Duration::from_millis(33);
 
+/// The shortest wait between passes of a hidden window.
+///
+/// A hidden player wakes for the end of its track and nothing else, so the
+/// wait is the time left. A track whose length is unknown, or whose position
+/// has not caught up, would otherwise ask for a pass on every frame.
+const MIN_HIDDEN_WAKE: Duration = Duration::from_millis(100);
+
+/// The longest wait between passes of a hidden window.
+///
+/// A length that came from a tag rather than the decoder can be off, and the
+/// pass that hands over comes no later than this after the track really ends.
+/// The checks far from the end cost a pass every two seconds; near it the
+/// wait is the time left, so an exact length is still met exactly.
+const MAX_HIDDEN_WAKE: Duration = Duration::from_secs(2);
+
 /// The shortest wait between redraws while a track plays.
 ///
 /// A short track moves the cursor quickly, but drawing faster than twenty-five
@@ -2655,6 +2670,21 @@ impl App {
         Duration::from_secs_f32(length / width).clamp(MIN_PLAYING_REPAINT, MAX_PLAYING_REPAINT)
     }
 
+    /// How long the next pass may wait.
+    ///
+    /// A window that is drawn moves its cursor every step. A hidden one has
+    /// nothing on screen but the end of its track: the pass that hands over
+    /// is asked for when the track runs out, so a player in the background
+    /// wakes for nothing else.
+    fn next_step(&self) -> Duration {
+        if !self.hidden {
+            return self.cursor_step();
+        }
+        self.length
+            .saturating_sub(self.position())
+            .clamp(MIN_HIDDEN_WAKE, MAX_HIDDEN_WAKE)
+    }
+
     /// Moves the player on when a track runs out, and keeps it waking.
     ///
     /// A window that is hidden draws nothing, so this cannot live in the
@@ -2670,7 +2700,12 @@ impl App {
             // A trial's own bar moves while it plays; a paused trial has
             // nothing to draw, so it waits for a key rather than a frame.
             if self.audio.as_ref().is_some_and(|audio| !audio.is_empty()) && !self.paused() {
-                ctx.request_repaint_after(PLAYING_REPAINT);
+                let step = if self.hidden {
+                    self.next_step()
+                } else {
+                    PLAYING_REPAINT
+                };
+                ctx.request_repaint_after(step);
             }
             return;
         }
@@ -2680,7 +2715,7 @@ impl App {
         if self.preview.is_some() {
             if self.audio.as_ref().is_some_and(|audio| !audio.is_empty()) {
                 if !self.paused() {
-                    ctx.request_repaint_after(self.cursor_step());
+                    ctx.request_repaint_after(self.next_step());
                 }
                 return;
             }
@@ -2705,7 +2740,7 @@ impl App {
         };
         if !empty {
             if !paused {
-                ctx.request_repaint_after(self.cursor_step());
+                ctx.request_repaint_after(self.next_step());
             }
             return;
         }
@@ -3540,6 +3575,23 @@ pub(crate) mod tests {
         assert!(!drew_a_frame(&mut app), "a hidden window draws no frame");
         app.set_hidden(&egui::Context::default(), false);
         assert!(drew_a_frame(&mut app), "showing it draws again");
+    }
+
+    #[test]
+    fn a_hidden_window_waits_for_the_end_of_its_track() {
+        let mut app = app_with(&[("One", &["A", "B"])]);
+        app.wave_width = 1200.0;
+        app.length = Duration::from_secs(120);
+        assert!(
+            app.next_step() < Duration::from_secs(1),
+            "a drawn window follows its cursor"
+        );
+        app.set_hidden(&egui::Context::default(), true);
+        assert_eq!(app.next_step(), MAX_HIDDEN_WAKE);
+        app.length = Duration::from_secs(1);
+        assert_eq!(app.next_step(), Duration::from_secs(1));
+        app.length = Duration::ZERO;
+        assert_eq!(app.next_step(), MIN_HIDDEN_WAKE);
     }
 
     #[test]
