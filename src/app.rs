@@ -257,14 +257,6 @@ pub(crate) struct BigArt {
 pub struct App {
     /// The renderer the window is drawing through.
     pub(crate) renderer: &'static str,
-    /// Whether the frame-rate counter is drawn.
-    pub(crate) show_fps: bool,
-    /// Frames per second, as last measured.
-    pub(crate) fps: f32,
-    /// Frames drawn since the last measurement.
-    fps_frames: u32,
-    /// When the last measurement started.
-    fps_last: Instant,
     /// Whether the window closes itself after [`SMOKE_FRAMES`] frames.
     pub(crate) smoke: bool,
     /// Whether settings are written to disk.
@@ -535,10 +527,6 @@ impl App {
         };
         let mut app = Self {
             renderer: "OpenGL",
-            show_fps: false,
-            fps: 0.0,
-            fps_frames: 0,
-            fps_last: Instant::now(),
             smoke,
             persist: !smoke,
             frames: 0,
@@ -3130,43 +3118,6 @@ impl App {
         }
     }
 
-    /// Counts frames and draws the counter when `--fps` asked for it.
-    ///
-    /// The counter keeps asking for repaints, so the number is the rate the
-    /// backend can actually draw at rather than the rate something happened
-    /// to ask for a frame.
-    fn tick_fps(&mut self, ctx: &egui::Context) {
-        self.fps_frames += 1;
-        let now = Instant::now();
-        let elapsed = now.duration_since(self.fps_last);
-        if elapsed >= Duration::from_secs(1) {
-            self.fps = self.fps_frames as f32 / elapsed.as_secs_f32();
-            self.fps_frames = 0;
-            self.fps_last = now;
-            if self.show_fps {
-                eprintln!("blue-dove: {:.1} fps", self.fps);
-            }
-        }
-        if !self.show_fps {
-            return;
-        }
-        egui::Area::new(egui::Id::unique("fps"))
-            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 8.0))
-            .show(ctx, |ui| {
-                egui::Frame::NONE
-                    .fill(egui::Color32::from_black_alpha(160))
-                    .inner_margin(egui::Margin::symmetric(6, 2))
-                    .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new(format!("{:.1} fps", self.fps))
-                                .monospace()
-                                .color(egui::Color32::WHITE),
-                        );
-                    });
-            });
-        ctx.request_repaint();
-    }
-
     /// Closes the window after a few frames when running a smoke test.
     fn tick_smoke(&mut self, ctx: &egui::Context) {
         if !self.smoke {
@@ -3473,7 +3424,6 @@ impl App {
         self.abx_window(&ctx);
         self.directories_window(&ctx);
 
-        self.tick_fps(&ctx);
         self.tick_smoke(&ctx);
     }
 }
