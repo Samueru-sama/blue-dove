@@ -90,7 +90,7 @@ pub const ROW_HEIGHT: f32 = 22.0;
 
 /// Width of the album list, in points. The now-playing art sits at its top
 /// and is as wide as the list, so the width also sets the art's size.
-pub const ALBUM_LIST_WIDTH: f32 = 300.0;
+pub const ALBUM_LIST_WIDTH: f32 = 290.0;
 
 /// How many cover textures are kept.
 ///
@@ -102,10 +102,10 @@ const KEPT_TEXTURES: usize = 64;
 /// Height of the bottom bar holding the waveform, in points.
 ///
 /// It leaves room for the waveform plus an equal gap above and below it.
-pub const PLAYER_HEIGHT: f32 = 66.0;
+pub const PLAYER_HEIGHT: f32 = 61.0;
 
 /// Height of the bottom bar in the compact layout, holding a thin waveform.
-pub const COMPACT_PLAYER_HEIGHT: f32 = 20.0;
+pub const COMPACT_PLAYER_HEIGHT: f32 = 15.0;
 
 /// The size the compact layout snaps the window to, in points.
 ///
@@ -114,7 +114,7 @@ pub const COMPACT_PLAYER_HEIGHT: f32 = 20.0;
 /// square art at its full width, the line naming the track, the strip and
 /// the thin waveform. The art is not shrunk to make the name line fit: the
 /// popup is made taller instead, since the art is the reason to use it.
-pub const COMPACT_SIZE: [f32; 2] = [320.0, 414.0];
+pub const COMPACT_SIZE: [f32; 2] = [310.0, 399.0];
 
 /// The size below which the window drops the album list and the playlist.
 ///
@@ -126,7 +126,7 @@ pub const COMPACT_BREAK: [f32; 2] = [560.0, 430.0];
 ///
 /// No square is drawn without art, so the window is only as tall as the line
 /// naming the track, the controls and the waveform.
-pub const PREVIEW_NO_ART_SIZE: [f32; 2] = [320.0, 92.0];
+pub const PREVIEW_NO_ART_SIZE: [f32; 2] = [310.0, 87.0];
 
 /// What the directory dialog was opened to pick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,7 +149,7 @@ const PREVIEW_TRACK: u64 = u64::MAX;
 /// The popup without its square: the menu bar, the line naming the track, the
 /// controls and the thin waveform. Snapping to the full [`COMPACT_SIZE`]
 /// would leave the height the art would have taken as empty background.
-pub const COMPACT_NO_ART_SIZE: [f32; 2] = [320.0, 100.0];
+pub const COMPACT_NO_ART_SIZE: [f32; 2] = [310.0, 95.0];
 
 /// The smallest the window may be made in the full layout, in points.
 ///
@@ -172,11 +172,11 @@ pub fn compact_for(size: egui::Vec2) -> bool {
 /// The bar takes all but a narrow gap of the strip it sits in, so the
 /// waveform is the widest thing in the player bar rather than a band with
 /// dead space above and below it.
-pub const WAVE_HEIGHT: f32 = 48.2;
+pub const WAVE_HEIGHT: f32 = 43.2;
 
 /// Height of the waveform in the compact layout, in points: a thin line
 /// that still shows the shape of the track and can be clicked to seek.
-pub const COMPACT_WAVE_HEIGHT: f32 = 15.2;
+pub const COMPACT_WAVE_HEIGHT: f32 = 10.2;
 
 /// Height of the line naming the playing track in the compact layout, in
 /// points.
