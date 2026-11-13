@@ -13,6 +13,7 @@ mod decode;
 mod dialog;
 mod digest;
 mod downmix;
+mod env;
 mod error;
 mod fonts;
 mod format;
@@ -36,7 +37,6 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 
 use app::App;
-use cli::Renderer;
 use eframe::egui;
 
 /// Window and taskbar icon, generated from `assets/icon.svg`.
@@ -143,30 +143,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         app::DEFAULT_WINDOW_SIZE
     };
     let viewport = window_viewport(preview, start_size, icon);
-    let show_fps = cli.fps;
-    let no_vsync = cli.no_vsync;
-    // A smoke run exercises the software fallback unless the launch asked for
-    // the GPU path, which is what `--smoke --opengl` is for.
-    let renderer = cli.renderer.unwrap_or(if smoke {
-        Renderer::Software
-    } else {
-        Renderer::OpenGl
-    });
-    let opengl_required = cli.renderer == Some(Renderer::OpenGl);
     let paths = cli.paths;
 
-    // BLUE_DOVE_SOFTWARE is the switch a wrapper can use when it cannot pass
-    // --software. A smoke run takes the CPU path unless it asked otherwise.
-    let software_only =
-        renderer == Renderer::Software || std::env::var_os("BLUE_DOVE_SOFTWARE").is_some();
+    // A smoke run exercises the software fallback, which is what the release
+    // pipeline has to prove works everywhere.
+    let software_only = env::renderer() == env::Renderer::Software || smoke;
     if software_only {
-        return run_software(viewport, smoke, paths, show_fps, request.as_ref());
+        return run_software(viewport, smoke, paths, request.as_ref());
     }
 
     // The child runs the GPU path; the parent waits and falls back if it
     // dies, which catches a segfault or an abort that unwinding cannot.
     if std::env::var_os("BLUE_DOVE_GPU").is_some() {
-        return run_gpu(viewport, smoke, paths, show_fps, no_vsync, request.as_ref());
+        return run_gpu(viewport, smoke, paths, request.as_ref());
     }
 
     // The child reports on its stdout once it has a window, so a death
@@ -184,12 +173,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if status.success() || got_a_window {
         std::process::exit(status.code().unwrap_or(1));
     }
-    if opengl_required {
-        eprintln!("blue-dove: the GPU backend failed and --opengl allows no fallback");
-        std::process::exit(status.code().unwrap_or(1).max(1));
-    }
     eprintln!("blue-dove: the GPU backend failed; using the software renderer");
-    run_software(viewport, false, paths, show_fps, request.as_ref())
+    run_software(viewport, false, paths, request.as_ref())
 }
 
 /// Claims the app, or asks the window that already owns it to show itself.
@@ -220,8 +205,6 @@ fn run_gpu(
     viewport: egui::ViewportBuilder,
     smoke: bool,
     paths: Vec<PathBuf>,
-    show_fps: bool,
-    no_vsync: bool,
     request: Option<&instance::Request>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some((lock, listener)) = claim(smoke, request) else {
@@ -229,10 +212,6 @@ fn run_gpu(
     };
     let options = eframe::NativeOptions {
         viewport,
-        glow_options: eframe::egui_glow::GlowConfiguration {
-            vsync: !no_vsync,
-            ..Default::default()
-        },
         ..Default::default()
     };
     let result = eframe::run_native(
@@ -249,7 +228,6 @@ fn run_gpu(
                 paths,
                 listener,
                 "OpenGL",
-                show_fps,
             )))
         }),
     );
@@ -263,14 +241,13 @@ fn run_software(
     viewport: egui::ViewportBuilder,
     smoke: bool,
     paths: Vec<PathBuf>,
-    show_fps: bool,
     request: Option<&instance::Request>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some((lock, listener)) = claim(smoke, request) else {
         return Ok(());
     };
     let result = software::run(viewport, move |ctx| {
-        build_app(ctx, smoke, paths, listener, "software", show_fps)
+        build_app(ctx, smoke, paths, listener, "software")
     });
     drop(lock);
     match result {
@@ -289,12 +266,10 @@ fn build_app(
     paths: Vec<PathBuf>,
     listener: Option<TcpListener>,
     renderer: &'static str,
-    show_fps: bool,
 ) -> App {
     eprintln!("blue-dove: using the {renderer} renderer");
     let mut app = App::new(ctx, smoke, paths);
     app.renderer = renderer;
-    app.show_fps = show_fps;
     if let Some(listener) = listener {
         app.watch_requests(listener, ctx);
     }

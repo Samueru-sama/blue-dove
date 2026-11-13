@@ -115,10 +115,11 @@ version and the changelog groups, so pick them carefully:
 - Repaint on demand. Do not request continuous repaints unless
   something is animating.
 - The renderer is glow (OpenGL), with a CPU fallback in `src/software.rs`
-  for hosts with no usable GL. `--opengl` and `--software` force either
-  one; `BLUE_DOVE_SOFTWARE=1` is the same switch for wrappers that cannot
-  pass `--software`. Keep eframe's default features off and enable only
-  what the app uses.
+  for hosts with no usable GL. `BD_RENDERER` names it the way GTK's
+  `GSK_RENDERER` names its own: `gl` (the default) or `software`; an
+  unknown value is reported on the terminal and leaves the default. A
+  host where GL cannot start gets the CPU renderer anyway. Keep eframe's
+  default features off and enable only what the app uses.
 - Keep the `--smoke` flag working. CI and the release pipeline launch
   every build with it to prove the app opens a window and draws. It runs
   the software fallback, so CI exercises the path a host with no GL takes.
@@ -334,6 +335,7 @@ Modules, in `src/`:
 | `theme.rs` | the palette and type scale |
 | `fonts.rs` | the CJK fallback font, loaded from the system when present |
 | `format.rs` | duration and count formatting |
+| `env.rs` | the renderer BD_RENDERER asks for |
 | `error.rs` | the `At` trait, which puts a path on a decoder's error |
 | `cli.rs` | the command line: flags, paths and the music directory they imply |
 | `abx.rs` | the blind comparison: ten trials, scored against guessing |
