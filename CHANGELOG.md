@@ -1,4 +1,10 @@
 
+## [0.1.20](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.19...v0.1.20) - 2026-11-14
+
+### Bug Fixes
+
+- Keep a waveform bar for every GPU point ([#75](https://github.com/pkgforge-apps/blue-dove/pull/75)) - ([79e550b](https://github.com/pkgforge-apps/blue-dove/commit/79e550bf17c12c9b79868d87bbb7b685384298f3))
+
 ## [0.1.19](https://github.com/pkgforge-apps/blue-dove/compare/v0.1.18...v0.1.19) - 2026-11-13
 
 ### Refactor
