@@ -47,11 +47,19 @@ and removes shared skills and files that no longer exist upstream.
 `PKGFORGE_SHARED_REF=<ref>` syncs from another branch, tag or commit.
 Review the diff and commit it as `chore: sync shared guidelines`.
 
+It stops before writing anything when it would lose something of the
+app's: a shared file, skill or the marked block that differs from what
+the last sync wrote, or a path the new revision adds that the app
+already has. It lists each one. Move the change upstream or into the
+app's own files, or sync with `PKGFORGE_SYNC_OVERWRITE=1` to drop it.
+
 The `sync-apps` workflow of pkgforge-apps/.github runs it in every app
-whenever `agents/` or `app/` changes there, and opens or updates a
+whenever `agents/`, `app/` or a reusable `.github/workflows/app-*.yml`
+changes there, and opens or updates a
 `chore/sync-guidelines` pull request with the result as
 pkgforge-apps-bot, so apps rarely need it by hand. The bot's pull
-requests start the app's CI like anyone's.
+requests start the app's CI like anyone's. An app whose sync stops shows
+up as a failed `sync-apps` run, with the list in its log.
 
 ## Change a shared file
 
@@ -72,7 +80,7 @@ requests start the app's CI like anyone's.
 ## Rules
 
 - Never edit the marked block, a shared skill, or a file the lock lists
-  inside an app. The next sync overwrites it. Make the change upstream.
+  inside an app. The next sync stops on it. Make the change upstream.
 - Something only one app needs goes in that app's own section of
   `AGENTS.md`, or in a skill or file the shared set does not use.
 - A change to a reusable workflow in `.github/workflows/` reaches an app

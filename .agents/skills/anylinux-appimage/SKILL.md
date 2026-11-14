@@ -69,8 +69,8 @@ Everything the image needs is an app-side file the shared job reads, so
 a need that looks like it wants a workflow of its own is a change to the
 shared job: `appimage = true` under `[package.metadata.pkgforge]` for
 the opt-in, `.github/pacman-packages.txt` for a package quick-sharun has
-to find on the build host, and `packaging/appimage/deploy.env` for a
-`DEPLOY_*` variable detection misses. With those, the image never has to
+to find on the build host, and `packaging/appimage/deploy.env` for the
+GL choice and a `DEPLOY_*` variable detection misses. With those, the image never has to
 leave the release job.
 
 ## How it is built
@@ -91,8 +91,12 @@ binaries into the AppDir by hand.
 - **The whole GL stack.** Left to detection, quick-sharun bundles
   `libGLX` and gallium but not `libEGL`, the `dri/` drivers or
   `libgbm`, which leaves no Wayland path and no driver behind the GL it
-  carries. The script sets `DEPLOY_OPENGL=1` and fails when the AppDir
-  has no `libEGL.so.1` or `dri/`. Set another `DEPLOY_*` variable only
+  carries. An app that draws with GL, as an egui app does, sets
+  `DEPLOY_OPENGL=1` in `packaging/appimage/deploy.env`, and the script
+  then fails when the AppDir has no `libEGL.so.1` or `dri/`. An app
+  that draws without GL on a host that has none sets
+  `USE_HOST_DRIVERS=1` there instead, so quick-sharun leaves the
+  drivers on the host. Set another `DEPLOY_*` variable only
   when detection gets that one wrong, and say why in the app's own
   section of `AGENTS.md`.
 - **A stack reached by name.** quick-sharun only detects a deploy mode
@@ -120,12 +124,11 @@ binaries into the AppDir by hand.
   quick-sharun and before it sets its own variables, so a value the file
   sets that the script also uses is overwritten rather than obeyed. It
   sources with `set -a`, so a plain assignment in the file is exported
-  and reaches quick-sharun, a child process; a file of bare `NAME=value`
-  lines is enough. `DEPLOY_OPENGL` stays the script's own. An app
-  without the file builds exactly as before. The packages the
-  deployment then bundles, such as the server itself, belong in
-  `.github/pacman-packages.txt`, since quick-sharun copies only what the
-  build host has.
+  and reaches quick-sharun, a child process; a file of bare
+  `NAME=value` lines is enough. An app without the file gets detection
+  alone. The packages the deployment then bundles, such as the server
+  itself, belong in `.github/pacman-packages.txt`, since quick-sharun
+  copies only what the build host has.
 - **Pins.** The job fetches quick-sharun and `get-debloated-pkgs` from
   one Anylinux-AppImages commit; quick-sharun pins sharun and
   appimagetool itself. To bump, change the commit in the three URLs in
@@ -168,8 +171,8 @@ app to stay open for ten seconds, so it does not fit apps here.
 
 A host with Mesa supplies what the image is missing, so an image
 without its own GL stack passes every test run on a desktop and fails
-on the one host that matters. The script's check covers `libEGL` and
-`dri/`. To look further:
+on the one host that matters. When `deploy.env` sets `DEPLOY_OPENGL=1`,
+the script's check covers `libEGL` and `dri/`. To look further:
 
 ```sh
 cd "$(mktemp -d)" && /path/to/<app>-anylinux-x86_64.AppImage --appimage-extract > /dev/null
@@ -184,9 +187,10 @@ stack of its own.
 
 ## Rust and egui
 
-- egui draws through glow, so the image needs the whole GL stack. A
-  smudge app drawing with its CPU renderer does not, but carrying it
-  does no harm.
+- egui draws through glow, so the image needs the whole GL stack: keep
+  the template's `DEPLOY_OPENGL=1` in `packaging/appimage/deploy.env`.
+  A smudge app drawing with its CPU renderer does not need it, but
+  carrying it does no harm.
 - The build host needs the winit libraries: `wayland`, `libxkbcommon`,
   `libxkbcommon-x11`, `libx11`, `libxcursor`, `libxi` and `libxrandr`.
   quick-sharun's strace mode finds the ones winit opens by name.
@@ -207,7 +211,7 @@ stack of its own.
 |---------|-------|-----|
 | `ERROR: Missing dependency 'patchelf'` | the build host lacks quick-sharun's tools | run in the Arch image after the setup action |
 | `ERROR: Missing '.DirIcon'` | the icon cannot be found | regenerate `assets/icons/` with `scripts/icons.sh` |
-| `the AppDir has no libEGL.so.1 or no dri/` | quick-sharun did not deploy the GL stack | check `DEPLOY_OPENGL` reached quick-sharun and Mesa is installed in the container |
+| `the AppDir has no libEGL.so.1 or no dri/` | quick-sharun did not deploy the GL stack `deploy.env` asked for | check Mesa is installed in the container and `deploy.env` does not also set `USE_HOST_DRIVERS=1` |
 | `error while loading shared libraries` at runtime | a library is missing from the image | raise `STRACE_TIME`, make the app reach the code path that opens it, or pass the library to quick-sharun |
 | `symbol lookup error` | a host library was used instead of the bundled one | keep the defaults `ANYLINUX_LIB=1` and `CROSS_LIBC_DLOPEN=1`, and never set `LD_LIBRARY_PATH` |
 | works in the build container, fails on a host | a host library check or a hardcoded `/usr` path | skip the check; map the path with `PATH_MAPPING` |

@@ -90,11 +90,17 @@ taken from the host when installed.
 
 The Mesa is [onelf-pkgs/mesa](https://github.com/onelf-pkgs/mesa)'s,
 built without LLVM, not Arch's, whose `libLLVM` took the bundle from
-about 7 MB to about 60 MB; this one adds about 8 MB. The job installs
-Arch's `mesa` for the libraries Mesa needs, removes the package's own
-files, and copies in the release's GL tree, so onelf bundles it as the
-build host's Mesa. Its software renderer is softpipe, slower than
-llvmpipe, which needs LLVM; hosts with a GPU use their driver as before.
+about 7 MB to about 60 MB; this one adds about 8 MB. When `onelf.toml`
+turns on `gl` or `dri`, the job removes the files of Arch's `mesa`
+package, keeping the libraries Mesa needs, and copies in the release's
+GL tree, so onelf bundles it as the build host's Mesa. Its software
+renderer is softpipe, slower than llvmpipe, which needs LLVM; hosts with
+a GPU use their driver as before.
+
+The same step puts [onelf-pkgs/opus](https://github.com/onelf-pkgs/opus)
+in place of Arch's `opus` when the build installed it, as PulseAudio
+does. Arch's carries the models of Opus's neural network features, over
+4 MB a bundle would carry unused.
 
 When the app starts loading another library at runtime that the scan
 cannot see, add its soname to `include`. To check what a bundle carries:
@@ -119,13 +125,15 @@ gh api repos/QaidVoid/onelf/releases/tags/<version> \
 Then build the bundle with the new onelf and run the
 `test-linux-bundle` skill on it before merging.
 
-To bump Mesa, update `MESA_RELEASE` and both `mesa-sha256` values in the
-same file, from the GL trees of the new
-[onelf-pkgs/mesa release](https://github.com/onelf-pkgs/mesa/releases):
+To bump Mesa or Opus, edit its row in the table of the "Install
+onelf-pkgs builds in place of Arch's" step in the same file: the
+release and the two SHA-256 values, from the trees of the new
+onelf-pkgs release. The asset prefix is `gl` for Mesa and `opus` for
+Opus:
 
 ```sh
-gh api repos/onelf-pkgs/mesa/releases/tags/<tag> \
-  --jq '.assets[] | select(.name | startswith("gl-") and endswith(".tar.zst")) | "\(.name) \(.digest)"'
+gh api repos/onelf-pkgs/<mesa or opus>/releases/tags/<tag> \
+  --jq '.assets[] | select(.name | test("^(gl|opus)-(x86_64|aarch64)\\.tar\\.zst$")) | "\(.name) \(.digest)"'
 ```
 
 Test a bundle built with it the same way.
