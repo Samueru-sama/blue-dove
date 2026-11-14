@@ -26,8 +26,9 @@ const LOOSE_ROW_HEIGHT: f32 = 18.0;
 
 /// The waveform bars mesh, kept from one frame to the next.
 pub(crate) struct WaveMesh {
-    /// The rect and the number of peaks it was built for.
-    key: (u32, u32, u32, u32, usize),
+    /// The rect, the points a bar covers and the number of peaks it was
+    /// built for.
+    key: (u32, u32, u32, u32, usize, usize),
     /// The played and remaining colours its vertices were last painted with.
     colors: (Color32, Color32),
     /// How many groups at the left are in the played colour.
@@ -1969,10 +1970,11 @@ impl App {
             let accent = self.accent();
             let idle = ui.visuals().widgets.inactive.bg_fill;
             let played_x = rect.left() + rect.width() * played;
-            // Two points a column halves the mesh without changing the shape
-            // a listener can see at this height, and the mesh is kept from
-            // frame to frame: a cursor that moves only recolours the columns
-            // it crossed.
+            // The mesh is kept from frame to frame: a cursor that moves only
+            // recolours the columns it crossed. One point a column is the
+            // shape the GPU path had before it was cached; the software
+            // renderer fills a rectangle a point, so it still takes two to
+            // halve its fills.
             let mesh = self.bar_mesh(rect, played_x, idle, accent);
             painter.add(egui::Shape::mesh(mesh));
             painter.line_segment(
@@ -2012,20 +2014,21 @@ impl App {
         played: Color32,
         remaining: Color32,
     ) -> Arc<egui::Mesh> {
-        const STEP: usize = 2;
+        let step = if self.renderer == "software" { 2 } else { 1 };
         let half = rect.height() * 0.42;
         let _ = self.column_heights(rect.width(), half);
         let heights = &self.wave_columns.as_ref().expect("just filled").3;
-        let groups = heights.len().div_ceil(STEP);
+        let groups = heights.len().div_ceil(step);
         let key = (
             rect.left().to_bits(),
             rect.top().to_bits(),
             rect.width().to_bits(),
             rect.height().to_bits(),
             self.peaks.len(),
+            step,
         );
         let offset = (played_x - rect.left()).max(0.0);
-        let played_group = ((offset / STEP as f32).floor() as usize + 1).min(groups);
+        let played_group = ((offset / step as f32).floor() as usize + 1).min(groups);
 
         if self
             .wave_mesh
@@ -2037,8 +2040,8 @@ impl App {
             mesh.reserve_vertices(groups * 4);
             mesh.reserve_triangles(groups * 2);
             for group in 0..groups {
-                let first = group * STEP;
-                let end = (first + STEP).min(heights.len());
+                let first = group * step;
+                let end = (first + step).min(heights.len());
                 let height = heights[first..end].iter().copied().fold(0.0_f32, f32::max);
                 let left = rect.left() + first as f32;
                 let right = (rect.left() + end as f32).min(rect.right());
@@ -3553,6 +3556,27 @@ mod layout_tests {
     #[test]
     fn a_row_wider_than_the_window_starts_at_its_edge() {
         assert_eq!(centring_shift(&[300.0, 300.0], 8.0, 200.0), 0.0);
+    }
+
+    #[test]
+    fn the_gpu_waveform_keeps_a_bar_for_every_point() {
+        let mut app = crate::app::App::new(&egui::Context::default(), true, Vec::new());
+        app.peaks = vec![0.5; 100];
+        let rect = Rect::from_min_size(pos2(0.0, 0.0), vec2(100.0, 40.0));
+        app.renderer = "gl";
+        let mesh = app.bar_mesh(rect, 0.0, Color32::RED, Color32::BLUE);
+        assert_eq!(
+            mesh.vertices.len(),
+            100 * 4,
+            "one bar a point is what the GPU path draws"
+        );
+        app.renderer = "software";
+        let mesh = app.bar_mesh(rect, 0.0, Color32::RED, Color32::BLUE);
+        assert_eq!(
+            mesh.vertices.len(),
+            50 * 4,
+            "the software path still takes two points a bar"
+        );
     }
 
     #[test]
