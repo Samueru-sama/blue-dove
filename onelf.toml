@@ -17,38 +17,4 @@ payload = "stipple"
 [bundle]
 strip = true
 scan-dlopen = true
-# winit draws its own Wayland decorations and never loads libdecor, whose
-# GTK plugin would otherwise pull GTK, cairo and pango into the bundle.
-no-gtk = true
-# The app draws through the host's GL when it has one and falls back to its
-# own CPU renderer when it does not, so the bundle carries no Mesa. The
-# exclude list keeps the scan from pulling the GL stack in by name.
-exclude = ["libdecor", "libgallium", "libGL", "libEGL", "libGLX", "libGLdispatch", "libgbm", "libdrm"]
-# winit and xkbcommon-dl load the X11 and Wayland stacks by name at run
-# time, so the string scan cannot see them. libasound is what cpal links;
-# the ALSA plugins behind it load the audio servers, which are bundled here
-# so the app can play without a usable host audio stack of its own.
-include = [
-  "libX11.so.6",
-  "libX11-xcb.so.1",
-  "libXcursor.so.1",
-  "libXi.so.6",
-  "libXrandr.so.2",
-  "libxkbcommon.so.0",
-  "libxkbcommon-x11.so.0",
-  "libwayland-client.so.0",
-  "libwayland-cursor.so.0",
-  "libwayland-egl.so.1",
-  "libasound.so.2",
-  "libpulse.so.0",
-  "libpipewire-0.3.so.0",
-  "libasound_module_pcm_pulse.so",
-  "libasound_module_pcm_pipewire.so",
-  "libasound_module_pcm_upmix.so",
-  "libasound_module_pcm_vdownmix.so",
-  "libasound_module_rate_samplerate.so",
-]
-# The ALSA plugins live outside the library directories ldconfig knows, so
-# they need a search path of their own to be found by name.
-search-paths = ["/usr/lib/alsa-lib"]
-
+exclude = ["libdecor"]
