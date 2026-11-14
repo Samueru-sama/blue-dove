@@ -343,6 +343,18 @@ Modules, in `src/`:
 
 Platform notes:
 
+- The renderer is glow (OpenGL), with a CPU fallback in `src/software.rs`
+  for hosts with no usable GL. `BD_RENDERER` names it the way GTK's
+  `GSK_RENDERER` names its own: `gl` (the default) or `software`; an
+  unknown value is reported on the terminal and leaves the default. A
+  host where GL cannot start gets the CPU renderer anyway. `--smoke` runs
+  the software fallback, so CI exercises the path a host with no GL takes.
+- Because of that fallback, and unlike other egui apps, neither bundle
+  carries Mesa. `onelf.toml` leaves `gl` and `dri` off, so onelf leaves
+  the GL stack to the host, and `packaging/appimage/deploy.env` sets
+  `USE_HOST_DRIVERS=1` so quick-sharun leaves the drivers on the host.
+  Confirm with the `test-linux-bundle` skill, which has a no-GL
+  container for exactly this case.
 - Audio goes through cpal's ALSA backend, so the build links
   `libasound`: `alsa-lib` on Arch, `libasound2-dev` on Debian and
   Ubuntu. This is the only system dependency.
