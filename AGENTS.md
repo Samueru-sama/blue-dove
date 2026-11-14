@@ -348,9 +348,9 @@ Platform notes:
   Ubuntu. This is the only system dependency.
 - The ALSA plugins that reach PulseAudio and PipeWire are loaded by
   name from a directory compiled into libasound. The AppImage gets them
-  from quick-sharun's audio deployment; `onelf.toml` lists them in
-  `include` with `/usr/lib/alsa-lib` on `search-paths`, since the
-  library scan cannot see them.
+  from quick-sharun's audio deployment, and onelf collects that
+  directory on its own for libasound, so `onelf.toml` names none of
+  them.
 - Every decoder is pure Rust: symphonia through rodio for the common
   formats, and `decode.rs` for the ones symphonia lacks (Monkey's Audio,
   WavPack, TTA, Musepack, Shorten, AMR). Those decode a file whole into
